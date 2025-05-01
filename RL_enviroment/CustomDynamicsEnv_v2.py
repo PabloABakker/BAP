@@ -25,14 +25,15 @@ class CustomDynamicsEnv(gym.Env):
         # State: [u, w, theta, theta_dot]
         self.state_dim = 4
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(self.state_dim,), dtype=np.float32
+            low=np.array([-10, -10, -5*np.pi, -50]), high=np.array([10, 10, 5*np.pi, 50 ]), shape=(self.state_dim,), dtype=np.float64
         )
 
-        # Action: [ld_dot, ld]   ## this might  change to dihedral angle
-        self.action_dim = 2
+        # Action: [ld]   ## this might  change to dihedral angle
+        self.action_dim = 1
         self.action_space = spaces.Box(
-            low=np.array([-np.inf, -self.ly*np.sin(18*np.pi/180)]), high=np.array([np.inf, self.ly*np.sin(18*np.pi/180)]), dtype=np.float32
-        )
+            low=np.array([-self.ly*np.sin(18*np.pi/180)]), high=np.array([self.ly*np.sin(18*np.pi/180)]), dtype=np.float64)
+        
+        
 
         # Time step for integration
         self.dt = 0.01  # seconds
@@ -40,52 +41,57 @@ class CustomDynamicsEnv(gym.Env):
         self.current_step = 0
 
         # Initialize state and ld
-        self.theta_k_1 = 0.0  
+        self.ld_prev = 0.0  
 
         self.state = None
-        self.ld = 0.0  
-        self.ld_dot = 0.0
 
         self.reset()
 
     def _dynamics(self, t, y, action):
         """
-        Defines the system dynamics (ODEs)
-        y = [u, w, theta, theta_dot]
+        Extended dynamics to include derivatives of u, v, theta, and theta_dot.
+        y = [u, v, theta, theta_dot]
         action = [ld_dot, ld]
+        Returns dy/dt = [u_dot, v_dot, theta_dot, theta_ddot]
         """
         u, w, theta, theta_dot = y
-        ld_dot = np.clip(action[0], self.action_space.low[0], self.action_space.high[0])
-        ld = np.clip(action[1], self.action_space.low[1], self.action_space.high[1])
+ 
+        ld = np.clip(action[0], self.action_space.low[0], self.action_space.high[0])
+        ld_dot = (ld - self.ld_prev)/self.dt
 
-        # Compute derivatives
-        ud = (-self.m * theta_dot * w - self.m * self.g * np.sin(theta) -
-              self.bx * self.f * (u - self.lz * theta_dot + ld_dot)) / self.m
+        # Accelerations
+        u_dot = -np.sin(theta)*self.g - 2*self.bx*u/self.m + self.lz*theta_dot*2*self.bx/self.m + 2*self.bx*ld_dot/self.m - theta_dot*w
+        v_dot =  np.cos(theta)*self.g - 2*(self.c1*self.f+self.c2)/self.m - 2*self.bz*w/self.m - 2*self.bz*(self.lx + ld)*theta_dot/self.m + theta_dot*u
+        theta_ddot = (
+            2*self.bx*self.lz*u
+            - 2*self.bx*self.lz**2 * theta_dot
+            - 2*self.bx*self.lz*ld_dot
+            - 2*self.c1*self.f*(ld + self.lx)
+            - 2*self.c2*(ld + self.lx)
+            - 2*self.bz*w*(ld + self.lx)
+            - 2*self.bz*(ld + self.lx)**2 * theta_dot
+        ) / self.Iyy
 
-        wd = (self.m * theta_dot * u + self.m * self.g * np.cos(theta) -
-              (self.c1 * self.f + self.c2) - self.bz * self.f * (w - ld * theta_dot)) / self.m
+        self.ld_prev = ld  # Update previous ld for next step
+        return [u_dot, v_dot, theta_dot, theta_ddot]
 
-        theta_ddot = (-self.bx * self.f * self.lz * (u - self.lz * theta_dot + ld_dot) +
-                      self.bz * self.f * ld * (w - ld * theta_dot) -
-                      (self.c1 * self.f + self.c2) * ld) / self.Iyy
-
-        return [ud, wd, theta_ddot]
 
     def step(self, action):
         """
-        Using euler forward discretization to propagate the dynamics and note 
-        that for the propagation of theta we use second order information.
+        Step function using solve_ivp with full state integration.
         """
-        #Take a step in the environment using the given action.	
-        f, g, h = self._dynamics(0, self.state, action)
+        t_span = (0, self.dt)
+        y0 = self.state.copy()
 
-        dy = [f, g, (self.state[2]-self.theta_k_1)/self.dt, h]  # theta is updated like a second order system
+        def wrapped_dynamics(t, y):
+            return self._dynamics(t, y, action)
 
-        self.theta_k_1 = self.state[2]
-        self.state = self.state + self.dt * np.array(dy)
+        sol = solve_ivp(wrapped_dynamics, t_span, y0, method='RK45', t_eval=[self.dt])
+
+        self.state = sol.y[:, -1]
 
         self.current_step += 1
-        reward = -np.sum(np.square(self.state[:3]))
+        reward = -np.sum(np.square(self.state[:3]))  # penalize u, v, theta
 
         terminated = self.current_step >= self.max_steps or np.any(np.abs(self.state) > 100)
         if np.any(np.abs(self.state) > 100):
@@ -94,11 +100,11 @@ class CustomDynamicsEnv(gym.Env):
         return self.state.copy(), reward, terminated, False, {}
 
 
+
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         # Reset state and ld
-        self.state = np.array([0.0, 0.0, 0.1, 0.0], dtype=np.float32)  # small initial theta
-        self.ld = 0.0
+        self.state = np.array([0.00, 0.00, 0.01, 0.00], dtype=np.float64)  # small initial theta
         self.current_step = 0
         return self.state.copy(), {}
 
