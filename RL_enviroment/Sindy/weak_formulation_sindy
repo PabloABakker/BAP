@@ -1,0 +1,101 @@
+import numpy as np
+import pysindy as ps
+from pysindy.feature_library import WeakPDELibrary
+from scipy.integrate import cumulative_trapezoid
+import matplotlib.pyplot as plt
+from sklearn.linear_model import Lasso
+
+# Load data
+data = np.load('dynamics_data.npz')
+X = data['X']  # shape (10, 200, 4)
+U = data['U']  # shape (10, 200, 1)
+
+dt = 0.01
+t = np.linspace(0, (X.shape[1] - 1) * dt, X.shape[1])  # shape (200,)
+
+# Allocate arrays for integrals
+X_int = np.zeros_like(X)
+U_int = np.zeros_like(U)
+
+# Perform integration
+for i in range(X.shape[0]):
+    for j in range(X.shape[2]):
+        X_int[i, :, j] = cumulative_trapezoid(X[i, :, j], t, initial=0)
+    U_int[i, :, 0] = cumulative_trapezoid(U[i, :, 0], t, initial=0)
+
+# Convert to list of trajectories
+X_mult = [X_int[i] for i in range(X.shape[0])]
+U_mult = [U_int[i] for i in range(U.shape[0])]
+
+# Define the weak-form library
+ode_lib = WeakPDELibrary(
+    library_functions=[lambda x: x, lambda x, y: x * y],
+    spatiotemporal_grid=t,
+    is_uniform=True,
+    K=100,
+)
+
+# Set up the SINDy model
+model = ps.SINDy(
+    optimizer=Lasso(alpha=0.00000001, fit_intercept=True, max_iter=500),
+    feature_library=ode_lib,
+    discrete_time=False  # Weak form is continuous
+)
+
+# Fit the model
+model.fit(X_mult, u=U_mult, t=dt, multiple_trajectories=True, ensemble=True)
+model.print()
+
+# You can also use the model for prediction
+x0 = X[0, 0, :]  # Initial state from first trajectory
+u_test = U[0, :, :]  # Controls from first trajectory
+
+# Create time array
+dt = 0.01  # time step
+t_sim = np.linspace(0, (len(u_test) - 1) * dt, len(u_test))  # proper time array
+
+# Simulate the learned model
+x_sim = model.simulate(x0, t=t_sim, u=u_test)
+
+
+import matplotlib.pyplot as plt
+
+# Get ground truth for first trajectory
+X_true = X[0]  # shape: (n_timesteps, n_states)
+u_true      = X_true[:, 0]
+w_true      = X_true[:, 1]
+theta_true  = X_true[:, 2]
+theta_dot_true = X_true[:, 3]
+
+# Get simulated states from SINDy
+u_sim      = x_sim[:, 0]
+w_sim      = x_sim[:, 1]
+theta_sim  = x_sim[:, 2]
+theta_dot_sim = x_sim[:, 3]
+
+# Plotting
+fig, axs = plt.subplots(4, 1, figsize=(10, 8), sharex=True)
+
+axs[0].plot(u_true, label='u (true)', linewidth=2)
+axs[0].plot(u_sim, '--', label='u (simulated)', linewidth=2)
+axs[0].legend()
+axs[0].set_ylabel('u')
+
+axs[1].plot(w_true, label='w (true)', linewidth=2)
+axs[1].plot(w_sim, '--', label='w (simulated)', linewidth=2)
+axs[1].legend()
+axs[1].set_ylabel('w')
+
+axs[2].plot(theta_true, label='theta (true)', linewidth=2)
+axs[2].plot(theta_sim, '--', label='theta (simulated)', linewidth=2)
+axs[2].legend()
+axs[2].set_ylabel('theta')
+
+axs[3].plot(theta_dot_true, label='theta_dot (true)', linewidth=2)
+axs[3].plot(theta_dot_sim, '--', label='theta_dot (simulated)', linewidth=2)
+axs[3].legend()
+axs[3].set_ylabel('theta_dot')
+axs[3].set_xlabel('Time step')
+
+plt.tight_layout()
+plt.show()
