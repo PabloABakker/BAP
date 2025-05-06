@@ -18,6 +18,7 @@ def generate_training_data(env, n_trajectories=50, steps_per_trajectory=200, noi
     """
     X = []
     U = []
+    dt = 0.002
     
     for _ in range(n_trajectories):
         # Reset environment
@@ -28,7 +29,8 @@ def generate_training_data(env, n_trajectories=50, steps_per_trajectory=200, noi
         for _ in range(steps_per_trajectory):
             # Random action
             # u = env.action_space.sample()
-            u = np.array([0.01])
+            u = np.array([0.05*np.sin(2*np.pi*dt*_*0.2)])  # Example control input
+            # u = np.array([0])
 
             # Store current state and action
             x_traj.append(x)
@@ -85,8 +87,8 @@ if __name__ == "__main__":
     
     # Generate data
     X, U = generate_training_data(env, 
-                                        n_trajectories=10,
-                                        steps_per_trajectory=200,
+                                        n_trajectories=2,
+                                        steps_per_trajectory=7500,
                                         noise_level=0)
     
     # Save data

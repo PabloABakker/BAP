@@ -12,7 +12,15 @@ data = np.load('dynamics_data.npz')
 
 X = data['X']
 U = data['U']
-print(f'X shape: {X.shape}')
+if np.isnan(X).any():
+    print("X contains NaN values")
+# normalize the data
+# X = X / np.max(np.abs(X))
+# U = U / np.max(np.abs(U))
+# print if x contains NaN values
+# if np.isnan(X).any():
+#     print("X contains NaN values")
+
 x_test = X[0, :, :]
 u_test = U[0, :, :]
 
@@ -40,10 +48,9 @@ state_labels = ['u', 'v', 'theta', 'theta_dot']
 #     plt.tight_layout()
 #     plt.show()
 
+X_mult = [traj for traj in X]
 
-# Reshape data (combine all trajectories)
-X_combined = X.reshape(-1, X.shape[-1])
-U_combined = U.reshape(-1, U.shape[-1])
+U_mult = [traj for traj in U]
 
 from pysindy.feature_library import FourierLibrary
 poly_library = PolynomialLibrary(degree=2)
@@ -58,14 +65,14 @@ combined_library = GeneralizedLibrary(
 # Create SINDy model
 from pysindy.differentiation import FiniteDifference, SmoothedFiniteDifference
 model = SINDy(
-    optimizer=SR3(threshold=0.01, nu=0.0001, max_iter=1000), # changed from 0.01 to 0.1,
+    optimizer=Lasso(alpha=0.0001, fit_intercept=True, max_iter=300), # changed from 0.01 to 0.1,
     feature_library=PolynomialLibrary(degree=2), # changed from degree 3 to degree 2
     discrete_time=False,
     differentiation_method=SmoothedFiniteDifference())
 
 
 # # Fit the model
-model.fit(X_combined, t=0.01, u=U_combined, ensemble=True) #changed dt from the env.dt to 0.01
+model.fit(X_mult, t=0.002, u=U_mult, library_ensemble=True, multiple_trajectories=True) #changed dt from the env.dt to 0.01
 
 # Print the discovered equations
 model.print()
@@ -75,14 +82,14 @@ x0 = X[0, 0, :]  # Initial state from first trajectory
 u_test = U[0, :, :]  # Controls from first trajectory
 
 # Create time array
-dt = 0.01  # time step
+dt = 0.002  # time step
 t_sim = np.linspace(0, (len(u_test) - 1) * dt, len(u_test))  # proper time array
 
 # Simulate the learned model
 # print(f'x0: {x0}')
 # print(f'u_test: {u_test}')
 x_sim = model.simulate(x0, t=t_sim, u=u_test)
-print('done simulating')
+
 
 import matplotlib.pyplot as plt
 
