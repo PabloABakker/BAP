@@ -25,15 +25,15 @@ class CustomDynamicsEnv(gym.Env):
         # State: [u, w, theta, theta_dot]
         self.state_dim = 4
         self.observation_space = spaces.Box(
-            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf]), 
-            high=np.array([np.inf, np.inf, np.inf, np.inf]), 
+            low=np.array([-10, -10, -5*np.pi, -30]), 
+            high=np.array([10, 10, 5*np.pi, 30]), 
             shape=(self.state_dim,), dtype=np.float64
         )
 
         # Action: [ld]
         self.action_dim = 1
         self.action_space = spaces.Box(
-            low=np.array([-np.inf]), high=np.array([np.inf]), dtype=np.float64
+            low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64
         )
         
         # Time step for integration
@@ -111,7 +111,7 @@ class CustomDynamicsEnv(gym.Env):
         self.current_step += 1
         
         # Calculate reward
-        reward = -np.sum(np.square(self.state[:3]))  # penalize u, w, theta
+        reward = -np.sum(np.square(self.state[2]))  # penalize u, w, theta
         
         # Check termination conditions
         terminated = (self.current_step >= self.max_steps or 
