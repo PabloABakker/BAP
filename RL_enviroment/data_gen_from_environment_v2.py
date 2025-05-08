@@ -29,7 +29,7 @@ def generate_training_data(env, n_trajectories=50, steps_per_trajectory=200, noi
         for _ in range(steps_per_trajectory):
             # Random action
             # u = env.action_space.sample()
-            u = np.array([0.05*np.sin(2*np.pi*dt*_*0.2)])  # Example control input
+            u = np.array([0.01*np.sin(2*np.pi*dt*_*0.2)])  # Example control input
             # u = np.array([0])
 
             # Store current state and action
@@ -44,7 +44,7 @@ def generate_training_data(env, n_trajectories=50, steps_per_trajectory=200, noi
         # Convert to arrays
         x_traj = np.array(x_traj)
         u_traj = np.array(u_traj)
-        
+
         # Add noise if specified
         if noise_level > 0:
             x_traj += np.random.normal(scale=noise_level, size=x_traj.shape)

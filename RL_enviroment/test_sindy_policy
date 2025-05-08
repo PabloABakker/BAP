@@ -1,0 +1,57 @@
+import pickle
+import numpy as np
+import gymnasium as gym
+import matplotlib.pyplot as plt
+
+# Load the trained model
+with open("sindy_policy.pkl", "rb") as f:
+    model = pickle.load(f)
+
+def sindy_policy(observation, model):
+    obs = observation.reshape(1, -1)
+    action = model.predict(obs)
+    return np.clip(action[0], -2.0, 2.0)
+
+def evaluate_sindy_on_env(model, render=False):
+    env = gym.make("Pendulum-v1", render_mode="human" if render else None)
+    obs, _ = env.reset()
+    total_reward = 0
+    obs_list = []
+    action_list = []
+
+    for t in range(200):
+        action = sindy_policy(obs, model)
+        obs_list.append(obs)
+        action_list.append(action)
+
+        obs, reward, terminated, truncated, _ = env.step([action])
+        total_reward += reward
+
+        if terminated or truncated:
+            break
+
+    env.close()
+    print(f"\nTotal reward with SINDy policy: {total_reward:.2f}")
+
+    # Optional plot
+    obs_array = np.array(obs_list)
+    action_array = np.array(action_list)
+
+    time = np.arange(len(obs_array)) * 0.05
+    plt.figure(figsize=(10, 4))
+    plt.subplot(2, 1, 1)
+    plt.plot(time, obs_array[:, 2], label="theta_dot")
+    plt.plot(time, np.arctan2(obs_array[:, 1], obs_array[:, 0]), label="theta")
+    plt.ylabel("State")
+    plt.legend()
+
+    plt.subplot(2, 1, 2)
+    plt.plot(time, action_array, label="action", color="orange")
+    plt.xlabel("Time (s)")
+    plt.ylabel("Torque")
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
+
+if __name__ == "__main__":
+    evaluate_sindy_on_env(model, render=True)

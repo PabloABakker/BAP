@@ -25,8 +25,11 @@ class CustomDynamicsEnv(gym.Env):
         # State: [u, w, theta, theta_dot]
         self.state_dim = 4
         self.observation_space = spaces.Box(
-            low=np.array([-10, -10, -5*np.pi, -30]), 
-            high=np.array([10, 10, 5*np.pi, 30]), 
+            # low=np.array([-10, -10, -5*np.pi, -30]), 
+            # high=np.array([10, 10, 5*np.pi, 30]), 
+            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf]),
+            high=np.array([np.inf, np.inf, np.inf, np.inf]), 
+
             shape=(self.state_dim,), dtype=np.float64
         )
 
@@ -34,6 +37,8 @@ class CustomDynamicsEnv(gym.Env):
         self.action_dim = 1
         self.action_space = spaces.Box(
             low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64
+            # low=np.array([-np.inf]), high=np.array([np.inf]), dtype=np.float64
+
         )
         
         # Time step for integration

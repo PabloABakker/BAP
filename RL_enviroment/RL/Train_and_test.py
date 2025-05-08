@@ -1,90 +1,131 @@
 import gymnasium as gym
-import stable_baselines3
-from stable_baselines3.common.callbacks import StopTrainingOnNoModelImprovement, StopTrainingOnRewardThreshold, EvalCallback
+from stable_baselines3 import PPO, SAC
+from stable_baselines3.common.callbacks import EvalCallback
 from stable_baselines3.common.monitor import Monitor
 import os
 import argparse
-import numpy as np
-import sys
-from pathlib import Path
 
-# Get the parent directory (BAP_self in your case)
-parent_dir = str(Path(__file__).resolve().parent.parent)  # Goes up 2 levels from Train_and_test.py
-sys.path.append(parent_dir)
-
-from CustomDynamicsEnv_v2 import CustomDynamicsEnv
-
-gym.register(
-    id='CustomDynamicsEnv-v2',
-    entry_point='CustomDynamicsEnv_v2:CustomDynamicsEnv',
-)
-
-
-# Create directories to hold models and logs
+# Setup directories
 model_dir = "models"
 log_dir = "logs"
 os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
-
-
-def train():
-    model = sb3_class('MlpPolicy', env, verbose=1, device='cuda', tensorboard_log=log_dir)
-
-    # Stop training when mean reward reaches reward_threshold
-    callback_on_best = StopTrainingOnRewardThreshold(reward_threshold=np.inf, verbose=1)
-
-    # Stop training when model shows no improvement after max_no_improvement_evals, 
-    # but do not start counting towards max_no_improvement_evals until after min_evals.
-    # Number of timesteps before possibly stopping training = min_evals * eval_freq (below)
-    stop_train_callback = StopTrainingOnNoModelImprovement(max_no_improvement_evals=5, min_evals=10000, verbose=1)
-
-    eval_callback = EvalCallback(
-        env, 
-        eval_freq=10000, # how often to perform evaluation i.e. every 10000 timesteps.
-        callback_on_new_best=callback_on_best, 
-        callback_after_eval=stop_train_callback, 
-        verbose=1, 
-        best_model_save_path=os.path.join(model_dir, f"{args.gymenv}_{args.sb3_algo}"),
-    )
-    
+def train(env_id="Pendulum-v1", total_timesteps=100000, algo="ppo"):
     """
-    total_timesteps: pass in a very large number to train (almost) indefinitely.
-    tb_log_name: create log files with the name [gym env name]_[sb3 algorithm] i.e. Pendulum_v1_SAC
-    callback: pass in reference to a callback fuction above
+    Train using either PPO or SAC based on the 'algo' argument.
     """
-    model.learn(total_timesteps=int(1e10), tb_log_name=f"{args.gymenv}_{args.sb3_algo}", callback=eval_callback)
+    env = None
+    try:
+        env = gym.make(env_id)
+        env = Monitor(env)
+        
+        # Algorithm selection
+        if algo.lower() == "sac":
+            # SAC hyperparameters
+            model = SAC(
+                "MlpPolicy",
+                env,
+                learning_rate=3e-4,
+                buffer_size=100000,
+                batch_size=64,
+                tau=0.005,
+                gamma=0.99,
+                verbose=1,
+                tensorboard_log=log_dir
+            )
+            tb_log_name = f"SAC_{env_id}"
+            model_save_path = os.path.join(model_dir, f"SAC_{env_id}_final")
+        else:  # Default to PPO
+            # PPO hyperparameters
+            model = PPO(
+                "MlpPolicy",
+                env,
+                learning_rate=5e-4,
+                gamma=0.99,
+                batch_size=64,
+                n_steps=256,
+                verbose=1,
+                tensorboard_log=log_dir
+            )
+            tb_log_name = f"PPO_{env_id}"
+            model_save_path = os.path.join(model_dir, f"PPO_{env_id}_final")
 
-def test():        
-    model = sb3_class.load(os.path.join(model_dir, f"{args.gymenv}_{args.sb3_algo}", "best_model"), env=env)
+        # Callback for evaluation and saving best model
+        eval_callback = EvalCallback(
+            env,
+            best_model_save_path=os.path.join(model_dir, f"{algo}_{env_id}"),
+            log_path=os.path.join(log_dir, f"{algo}_{env_id}"),
+            eval_freq=10000,
+            deterministic=True,
+            render=False,
+            verbose=1
+        )
+        
+        # Train the model
+        model.learn(
+            total_timesteps=total_timesteps,
+            callback=eval_callback,
+            tb_log_name=tb_log_name
+        )
+        
+        # Save final model
+        model.save(model_save_path)
+        
+    finally:
+        if env is not None:
+            env.close()
 
-    obs = env.reset()[0]   
-    while True:
-        action, _ = model.predict(obs)
-        obs, _, terminated, truncated, _ = env.step(action)
-
-        if terminated or truncated:
-            break
-
+def test(env_id="Pendulum-v1", render=True, algo="ppo"):
+    """
+    Test the trained model (either PPO or SAC).
+    """
+    env = None
+    try:
+        env = gym.make(env_id, render_mode="human" if render else None)
+        
+        # Try loading best model, fallback to final if not found
+        best_model_path = os.path.join(model_dir, f"{algo}_{env_id}", "best_model")
+        final_model_path = os.path.join(model_dir, f"{algo}_{env_id}_final")
+        
+        if os.path.exists(best_model_path + ".zip"):
+            model_path = best_model_path
+        elif os.path.exists(final_model_path + ".zip"):
+            model_path = final_model_path
+        else:
+            raise FileNotFoundError(f"No model found for {algo.upper()} in {model_dir}")
+        
+        # Load the appropriate model
+        if algo == "sac":
+            model = SAC.load(model_path, env=env)
+        else:  # PPO
+            model = PPO.load(model_path, env=env)
+        
+        # Run the policy
+        obs, _ = env.reset()
+        while True:
+            action, _ = model.predict(obs, deterministic=True)
+            obs, _, terminated, truncated, _ = env.step(action)
+            
+            if terminated or truncated:
+                break
+                
+    finally:
+        if env is not None:
+            env.close()
 
 if __name__ == '__main__':
-
-    # Parse command line inputs
-    parser = argparse.ArgumentParser(description='Train or test model.')
-    parser.add_argument('gymenv', help='Gymnasium environment i.e. Humanoid-v4')
-    parser.add_argument('sb3_algo', help='StableBaseline3 RL algorithm i.e. A2C, DDPG, DQN, PPO, SAC, TD3')    
-    parser.add_argument('--test', help='Test mode', action='store_true')
+    parser = argparse.ArgumentParser(description='RL Training (PPO or SAC)')
+    parser.add_argument('--train', action='store_true', help='Train mode')
+    parser.add_argument('--test', action='store_true', help='Test mode')
+    parser.add_argument('--env', default="CartPole-v1", help='Environment ID')
+    parser.add_argument('--algo', default="ppo", choices=["ppo", "sac"], 
+                        help='Algorithm to use (ppo or sac)')
     args = parser.parse_args()
 
-    # Dynamic way to import algorithm. For example, passing in DQN is equivalent to hardcoding:
-    # from stable_baselines3 import DQN
-    sb3_class = getattr(stable_baselines3, args.sb3_algo)
-
-    if args.test:
-        env = gym.make(args.gymenv, render_mode='human')
-        test()
+    if args.train:
+        train(args.env, algo=args.algo)
+    elif args.test:
+        test(args.env, algo=args.algo)
     else:
-        env = gym.make(args.gymenv)
-        env = Monitor(env)
-        train()
-        
+        print("Please specify --train or --test")
