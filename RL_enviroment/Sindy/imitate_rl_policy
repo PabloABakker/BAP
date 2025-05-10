@@ -2,109 +2,65 @@ import numpy as np
 import pandas as pd
 import pysindy as ps
 from sklearn.model_selection import train_test_split
+import pickle
+import matplotlib.pyplot as plt
+from scipy.interpolate import NearestNDInterpolator
+from sklearn.linear_model import Lasso
 
-def analyze_with_sindy(data_file="sac_Pendulum-v1_data.csv"):
+from pysindy.feature_library import FourierLibrary, PolynomialLibrary, GeneralizedLibrary
+poly_library = PolynomialLibrary(degree=2)
+fourier_library = FourierLibrary(n_frequencies=2)  
+
+# Combine them
+combined_library = GeneralizedLibrary(libraries=[poly_library, fourier_library])
+
+
+
+def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
     """
-    Load collected data and apply SINDy to discover the RL policy: state -> action
+    Load collected data and apply SINDy to discover the RL policy: state -> action.
+    Automatically adapts to any Gym environment based on CSV structure.
     """
     # Load data
     data = pd.read_csv(data_file)
 
-    # Extract states and actions
+    # Detect state and action columns dynamically
     state_columns = [col for col in data.columns if col.startswith("state_")]
-    X = data[state_columns].values  # shape (N, num_states)
-    y = data["action_0"].values.reshape(-1, 1)  # shape (N, 1)
+    action_columns = [col for col in data.columns if col.startswith("action_")]
 
-    print(f"State dimensions: {X.shape[1]} | Total samples: {X.shape[0]}")
+    X = data[state_columns].values  # (N, state_dim)
+    y = data[action_columns].values  # (N, action_dim)
 
-    # Split data
-    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2)
+    print(f"State dim: {X.shape[1]}, Action dim: {y.shape[1]}, Samples: {X.shape[0]}")
 
-    # Time array with correct dt (same as Pendulum-v1)
-    dt = 0.05
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     t = np.arange(X_train.shape[0]) * dt
 
-    # Define SINDy model
+    # Fit SINDy model
     model = ps.SINDy(
         feature_names=state_columns,
-        optimizer=ps.STLSQ(threshold=0.001),
-        feature_library=ps.PolynomialLibrary(degree=5),
+        optimizer=ps.STLSQ(threshold=0.1),
+        # optimizer = Lasso(alpha=0.005, fit_intercept=True, max_iter=500),
+        feature_library=combined_library,
     )
+    model.fit(X_train, t=t, x_dot=y_train)
 
-    # Fit the model to learn u ≈ f(x) by pretending action is "x_dot"
-    model.fit(x=X_train, t=t, x_dot=y_train)
-
-    print("\nDiscovered policy (approximation of RL action as function of state):")
-    model.print()
-
-    import pickle
-
-    # After training the model
+    # Save model
     with open("sindy_policy.pkl", "wb") as f:
         pickle.dump(model, f)
-        
-    # Evaluate model
+
+    # Print summary
+    print("\nLearned SINDy Policy:")
+    model.print()
+
+    # Evaluation
     y_pred = model.predict(X_test)
     mse = ((y_pred - y_test) ** 2).mean()
-    print(f"\nMSE between SINDy and RL policy: {mse:.4f}")
-
-    import matplotlib.pyplot as plt
-
-    # Create a meshgrid over theta and theta_dot (inferred from sin/cos)
-    theta_vals = np.linspace(-np.pi, np.pi, 100)
-    theta_dot_vals = np.linspace(-8, 8, 100)
-    THETA, THETA_DOT = np.meshgrid(theta_vals, theta_dot_vals)
-
-    # Prepare grid of states: [cos(θ), sin(θ), θ̇]
-    COS = np.cos(THETA)
-    SIN = np.sin(THETA)
-    STATE_GRID = np.stack([COS.ravel(), SIN.ravel(), THETA_DOT.ravel()], axis=1)
-
-    # Predict actions from SAC data (interpolated)
-    from scipy.interpolate import NearestNDInterpolator
-
-    # Use data from entire file to interpolate original SAC policy
-    interp = NearestNDInterpolator(X, y.ravel())
-    sac_actions = interp(STATE_GRID)
-
-    # Predict using SINDy model
-    sindy_actions = model.predict(STATE_GRID).ravel()
-
-    # Reshape for plotting
-    sac_actions_grid = sac_actions.reshape(THETA.shape)
-    sindy_actions_grid = sindy_actions.reshape(THETA.shape)
-
-    # Plot both policies
-    fig, axs = plt.subplots(1, 2, figsize=(12, 5))
-    cmap = "coolwarm"
-
-    im0 = axs[0].imshow(
-        sac_actions_grid,
-        extent=[-np.pi, np.pi, -8, 8],
-        origin="lower",
-        aspect="auto",
-        cmap=cmap
-    )
-    axs[0].set_title("Original SAC Policy")
-    axs[0].set_xlabel("θ")
-    axs[0].set_ylabel("θ̇")
-    fig.colorbar(im0, ax=axs[0])
-
-    im1 = axs[1].imshow(
-        sindy_actions_grid,
-        extent=[-np.pi, np.pi, -8, 8],
-        origin="lower",
-        aspect="auto",
-        cmap=cmap
-    )
-    axs[1].set_title("SINDy-Approximated Policy")
-    axs[1].set_xlabel("θ")
-    axs[1].set_ylabel("θ̇")
-    fig.colorbar(im1, ax=axs[1])
-
-    plt.tight_layout()
-    plt.show()
+    nonzero_count = (model.coefficients() != 0).sum()
+    print(f"\nNonzero coefficients: {nonzero_count}")
+    print(f"MSE on test set: {mse:.4f}")
 
 
 if __name__ == "__main__":
-    analyze_with_sindy()
+    analyze_with_sindy(data_file=r"sac_CustomDynamicsEnv-v2_data.csv", dt=0.001)  # dt may vary based on env

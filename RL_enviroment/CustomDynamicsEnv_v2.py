@@ -4,10 +4,12 @@ from gymnasium import spaces
 from scipy.integrate import solve_ivp
 
 class CustomDynamicsEnv(gym.Env):
-    metadata = {'render_modes': ['human']}
+    metadata = {'render_modes': ['human'], 'render_fps': 30}
 
-    def __init__(self):
+    def __init__(self, render_mode=None):
         super(CustomDynamicsEnv, self).__init__()
+
+        self.render_mode = render_mode
 
         # Physical constants
         self.g = 9.8067  # gravity (m/s^2)
@@ -38,18 +40,26 @@ class CustomDynamicsEnv(gym.Env):
         self.action_space = spaces.Box(
             low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64
             # low=np.array([-np.inf]), high=np.array([np.inf]), dtype=np.float64
-
         )
         
         # Time step for integration
-        self.dt = 0.002  # seconds
-        self.max_steps = 4357
+        self.dt = 0.001  # seconds
+        self.max_steps = 4000
         self.current_step = 0
 
         # Initialize state and ld
         self.ld_prev = 0.0
         self.state = None
+
+        # Stability tracking
+        self.stable_counter = 0
+        self.stable_required = 200  # Steps that the agent must remain stable
+        self.stability_threshold_rad = 0.01  # rad
+        self.stability_threshold_radps = 0.05  # rad/s
+
+
         self.reset()
+
 
     def _full_dynamics(self, t, y, action):
         """
@@ -99,7 +109,7 @@ class CustomDynamicsEnv(gym.Env):
             fun=lambda t, y: self._full_dynamics(t, y, current_action),
             t_span=(0, self.dt),
             y0=self.state,
-            method='Radau',
+            method='RK45',
             t_eval=[self.dt]
         )
         
@@ -116,18 +126,36 @@ class CustomDynamicsEnv(gym.Env):
         self.current_step += 1
         
         # Calculate reward
-        reward = -np.sum(np.square(self.state[2]))  # penalize u, w, theta
+        reward = -np.sum(self.state[2]**2 + 0.5*self.state[3]**2)  # penalize  theta, theta_dot
         
-        # Check termination conditions
-        terminated = (self.current_step >= self.max_steps or 
-                     np.any(np.abs(self.state) > 100))
+        # Bonus for stability
+        theta_stable = abs(self.state[2]) < self.stability_threshold_rad
+        theta_dot_stable = abs(self.state[3]) < self.stability_threshold_radps
+
+        if theta_stable and theta_dot_stable:
+            self.stable_counter += 1
+        else:
+            self.stable_counter = 0
+
+        if self.stable_counter >= self.stable_required:
+            reward += 100  # bonus reward
+
+        # Penalize oscillations or runaway values
         if np.any(np.abs(self.state) > 100):
-            reward = -100
+            reward -= 100
+            terminated = True
+        elif self.current_step >= self.max_steps:
+            terminated = True
+        elif self.stable_counter >= self.stable_required:
+            terminated = True
+        else:
+            terminated = False
             
         return self.state.copy(), reward, terminated, False, {}
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self.seed(seed)
         # Reset state
         self.state = np.array([0.00, 0.00, 0.1, 0.00], dtype=np.float64)  # small initial theta (0.1 rad ~ 5.7°)
         self.current_step = 0
@@ -146,3 +174,15 @@ class CustomDynamicsEnv(gym.Env):
 
     def close(self):
         pass
+
+    def seed(self, seed=None):
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
+        return [seed]
+
+from gymnasium.envs.registration import register
+
+register(
+    id="CustomDynamicsEnv-v2",
+    entry_point="CustomDynamicsEnv_v2:CustomDynamicsEnv",
+    max_episode_steps=4000  
+)
