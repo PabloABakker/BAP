@@ -1,0 +1,219 @@
+import gymnasium as gym
+import numpy as np
+from gymnasium import spaces
+from scipy.integrate import solve_ivp
+import pygame
+
+class CustomDynamicsEnv(gym.Env):
+    metadata = {'render_modes': ['human'], 'render_fps': 30}
+
+    def __init__(self, render_mode=None):
+        super(CustomDynamicsEnv, self).__init__()
+
+        self.render_mode = render_mode
+
+        # Physical constants
+        self.g = 9.8067
+        self.m = 0.0294
+        self.Iyy = 0.1
+        self.bx = 0.081
+        self.bz = 0.0157
+        self.c1 = 0.0114
+        self.c2 = -0.0449
+        self.lx = 0.0
+        self.lz = 0.0271
+        self.ly = 0.081
+        self.f = 16.584013596491230
+
+        self.state_dim = 4
+        self.observation_space = spaces.Box(
+            low=np.array([-np.inf]*4), high=np.array([np.inf]*4), dtype=np.float64
+        )
+
+        self.action_dim = 1
+        self.action_space = spaces.Box(
+            low=np.array([-self.ly*np.sin(np.pi/10)]),
+            high=np.array([self.ly*np.sin(np.pi/10)]),
+            dtype=np.float64
+        )
+
+        self.dt = 0.001
+        self.max_steps = 4000
+        self.current_step = 0
+        self.ld_prev = 0.0
+        self.state = None
+
+        self.stable_counter = 0
+        self.stable_required = 200
+        self.stability_threshold_rad = 0.01
+        self.stability_threshold_radps = 0.05
+
+        pygame.init()
+        self.screen_width = 800
+        self.screen_height = 600
+        self.screen = pygame.display.set_mode((self.screen_width, self.screen_height))
+        pygame.display.set_caption("Flapping Wing Drone Simulation")
+        self.clock = pygame.time.Clock()
+
+        # Drone visualization parameters
+        self.drone_width = 40
+        self.drone_height = 10
+        self.x_pos = self.screen_width // 2
+        self.y_pos = self.screen_height // 2
+
+        self.reset()
+
+    def _full_dynamics(self, t, y, action):
+        u, w, theta, theta_dot = y
+        ld = np.clip(action[0], self.action_space.low[0], self.action_space.high[0])
+        ld_dot = (ld - self.ld_prev) / self.dt if t > 0 else 0
+
+        u_dot = (-np.sin(theta)*self.g - 2*self.bx*u/self.m + self.lz*theta_dot*2*self.bx/self.m + 
+                 2*self.bx*ld_dot/self.m - theta_dot*w)
+        w_dot = (np.cos(theta)*self.g - 2*(self.c1*self.f+self.c2)/self.m - 
+                 2*self.bz*w/self.m - 2*self.bz*(self.lx + ld)*theta_dot/self.m + theta_dot*u)
+        theta_ddot = (2*self.bx*self.lz*u - 2*self.bx*self.lz**2 * theta_dot - 2*self.bx*self.lz*ld_dot - 
+                      2*self.c1*self.f*(ld + self.lx) - 2*self.c2*(ld + self.lx) - 
+                      2*self.bz*w*(ld + self.lx) - 2*self.bz*(ld + self.lx)**2 * theta_dot) / self.Iyy
+
+        return [u_dot, w_dot, theta_dot, theta_ddot]
+
+    def step(self, action):
+        current_action = np.clip(action, self.action_space.low, self.action_space.high)
+        sol = solve_ivp(lambda t, y: self._full_dynamics(t, y, current_action),
+                        (0, self.dt), self.state, method='RK45', t_eval=[self.dt])
+        self.state = sol.y[:, -1]
+        self.ld_prev = current_action[0]
+
+        self.u_dot, self.w_dot, _, self.theta_ddot = self._full_dynamics(self.dt, self.state, current_action)
+        self.theta_dot = self.state[3]
+        self.current_step += 1
+
+        reward = -np.sum(0.01*self.state[0]**2 + 0.01*self.state[1]**2 + self.state[2]**2 + 0.5*self.state[3]**2)
+
+        theta_stable = abs(self.state[2]) < self.stability_threshold_rad
+        theta_dot_stable = abs(self.state[3]) < self.stability_threshold_radps
+
+        if theta_stable and theta_dot_stable:
+            self.stable_counter += 1
+        else:
+            self.stable_counter = 0
+
+        terminated = False
+        if self.stable_counter >= self.stable_required:
+            reward += 100
+            terminated = True
+        elif np.any(np.abs(self.state) > 100) or self.current_step >= self.max_steps:
+            reward -= 100
+            terminated = True
+
+        return self.state.copy(), reward, terminated, False, {}
+
+    def reset(self, seed=None, options=None):
+        super().reset(seed=seed)
+        self.seed(seed)
+        self.state = np.array([2.00, 0.00, 1.0, 0.00], dtype=np.float64)
+        self.current_step = 0
+        self.ld_prev = 0.0
+        self.u_dot = 0.0
+        self.w_dot = 0.0
+        self.theta_dot = 0.0
+        self.theta_ddot = 0.0
+        self.x_pos = self.screen_width // 2
+        self.y_pos = self.screen_height // 2
+        return self.state.copy(), {}
+
+    def render(self, mode='human'):
+        if mode != 'human':
+            return
+
+        pixels_per_meter = 100
+        origin_x = self.screen_width // 2
+        origin_y = self.screen_height - 50
+
+        # Reverse x and y axes
+        world_x = -self.state[0]  # u: flipped horizontally
+        world_y = -self.state[1]  # w: flipped vertically
+        theta = self.state[2]
+
+        screen_x = int(origin_x + world_x * pixels_per_meter)
+        screen_y = int(origin_y - world_y * pixels_per_meter)
+
+        self.screen.fill((255, 255, 255))
+
+        grid_spacing = 1
+        grid_color = (220, 220, 220)
+        text_color = (100, 100, 100)
+        font = pygame.font.SysFont('Arial', 14)
+
+        for dx in range(-int(origin_x / pixels_per_meter), int(origin_x / pixels_per_meter) + 1):
+            x = origin_x + dx * pixels_per_meter
+            pygame.draw.line(self.screen, grid_color, (x, 0), (x, self.screen_height))
+            label_val = dx  # flip label direction since x increases leftward
+            label = font.render(f"{label_val}", True, text_color)
+            self.screen.blit(label, (x + 2, origin_y + 5))
+
+        for dy in range(-int(origin_y / pixels_per_meter) + 1, int(origin_y / pixels_per_meter) + 1):
+            y = origin_y - dy * pixels_per_meter
+            pygame.draw.line(self.screen, grid_color, (0, y), (self.screen_width, y))
+            if dy != 0:
+                label = font.render(f"{dy}", True, text_color)  # y-axis increases upward
+                self.screen.blit(label, (origin_x + 5, y - 10))
+
+
+        pygame.draw.line(self.screen, (0, 0, 0), (0, origin_y), (self.screen_width, origin_y), 2)
+
+        drone_width, drone_height = 40, 10
+        drone_surf = pygame.Surface((drone_width, drone_height), pygame.SRCALPHA)
+        drone_surf.fill((0, 0, 255))
+
+        pygame.draw.line(drone_surf, (255, 0, 0), (drone_width // 2, drone_height // 2),
+                        (drone_width, drone_height // 2), 2)
+
+        rotated_drone = pygame.transform.rotate(drone_surf, np.degrees(theta))
+        rect = rotated_drone.get_rect(center=(screen_x, screen_y))
+        self.screen.blit(rotated_drone, rect.topleft)
+
+        status_text = font.render(
+            f"Step: {self.current_step}, u: {self.state[0]:.2f}, w: {self.state[1]:.2f}, "
+            f"θ: {np.degrees(self.state[2]):.1f}°, θ̇: {self.state[3]:.2f}",
+            True, (0, 0, 0)
+        )
+        self.screen.blit(status_text, (10, 10))
+
+        pygame.display.flip()
+        self.clock.tick(60)
+
+
+
+
+
+
+    def close(self):
+        pygame.quit()
+
+    def seed(self, seed=None):
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
+        return [seed]
+
+
+from gymnasium.envs.registration import register
+
+register(
+    id="CustomDynamicsEnv-v2",
+    entry_point="CustomDynamicsEnv_v2:CustomDynamicsEnv",
+    max_episode_steps=4000
+)
+
+if __name__ == "__main__":
+    env = CustomDynamicsEnv()
+    env.reset()
+
+    for _ in range(2000):
+        env.render()
+        action = 1  # Use random actions
+        state, reward, done, truncated, _ = env.step(action)
+        if done:
+            break
+
+    env.close()

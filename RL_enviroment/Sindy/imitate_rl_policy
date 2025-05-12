@@ -40,8 +40,8 @@ def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
     # Fit SINDy model
     model = ps.SINDy(
         feature_names=state_columns,
-        optimizer=ps.STLSQ(threshold=0.1),
-        # optimizer = Lasso(alpha=0.005, fit_intercept=True, max_iter=500),
+        # optimizer=ps.STLSQ(threshold=0.1),
+        optimizer = Lasso(alpha=0.0001, fit_intercept=True, max_iter=500),
         feature_library=combined_library,
     )
     model.fit(X_train, t=t, x_dot=y_train)
