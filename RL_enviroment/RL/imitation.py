@@ -71,11 +71,13 @@ def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
             while not done:
                 action, _ = model.predict(obs, deterministic=True)
 
-                # Ensure action is always an array
-                if np.isscalar(action):
-                    action = [action]
+                # Ensure action is a scalar (not an array)
+                action = action.item()  # Convert action to scalar
 
-                data.append(np.concatenate([obs, np.array(action)]))
+                # Convert obs to 1D for consistency
+                obs_array = np.atleast_1d(obs)
+
+                data.append(np.concatenate([obs_array, np.array([action])]))
                 obs, _, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
             
@@ -90,7 +92,7 @@ def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
             env.close()
 
     # Create and save DataFrame
-    columns = [f"state_{i}" for i in range(len(obs))] + [f"action_{i}" for i in range(len(action))]
+    columns = [f"state_{i}" for i in range(len(obs_array))] + [f"action_{i}" for i in range(1)]
     df = pd.DataFrame(data, columns=columns)
     output_file = f"{algo}_{env_id}_data.csv"
     df.to_csv(output_file, index=False)
@@ -100,5 +102,4 @@ def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
     return df
 
 if __name__ == "__main__":
-    data = collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=100, algo="sac")
-           
+    data = collect_data(env_id="CartPole-v1", num_episodes=100, algo="ppo")

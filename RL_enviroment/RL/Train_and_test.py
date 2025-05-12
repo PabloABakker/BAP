@@ -40,7 +40,7 @@ class MountainCarContinuousRewardWrapper(gym.RewardWrapper):
         return shaped_reward
 
 
-def train(env_id="Pendulum-v1", total_timesteps=200_000, algo="ppo"):
+def train(env_id="Pendulum-v1", total_timesteps=100_000, algo="ppo"):
     env = None
     try:
         # Create and wrap the environment correctly

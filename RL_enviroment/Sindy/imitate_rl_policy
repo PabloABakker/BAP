@@ -8,8 +8,8 @@ from scipy.interpolate import NearestNDInterpolator
 from sklearn.linear_model import Lasso
 
 from pysindy.feature_library import FourierLibrary, PolynomialLibrary, GeneralizedLibrary
-poly_library = PolynomialLibrary(degree=2)
-fourier_library = FourierLibrary(n_frequencies=2)  
+poly_library = PolynomialLibrary(degree=3)
+fourier_library = FourierLibrary(n_frequencies=1)  
 
 # Combine them
 combined_library = GeneralizedLibrary(libraries=[poly_library, fourier_library])
@@ -63,4 +63,4 @@ def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
 
 
 if __name__ == "__main__":
-    analyze_with_sindy(data_file=r"sac_CustomDynamicsEnv-v2_data.csv", dt=0.001)  # dt may vary based on env
+    analyze_with_sindy(data_file=r"C:\Users\const\Desktop\BAP\BAP\RL_enviroment\RL\ppo_CartPole-v1_data.csv", dt=0.001)  # dt may vary based on env

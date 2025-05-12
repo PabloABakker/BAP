@@ -8,5 +8,4 @@ stable-baselines3
 matplotlib
 sb3_contrib
 argparse
-sys
 pysindy
