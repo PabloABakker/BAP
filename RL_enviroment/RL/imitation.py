@@ -2,6 +2,7 @@ import numpy as np
 import pandas as pd
 import gymnasium as gym
 import os
+from pathlib import Path
 from stable_baselines3 import PPO, SAC, TD3
 import sys
 
@@ -10,10 +11,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import CustomDynamicsEnv_v2  # This runs the registration
 
-
-model_dir = "models"
-
-def collect_data(env_id="Pendulum-v1", num_episodes=10, algo="sac"):
+def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
     """
     Run the trained policy and collect (state, action) pairs.
     Returns DataFrame and saves to CSV.
@@ -23,59 +21,84 @@ def collect_data(env_id="Pendulum-v1", num_episodes=10, algo="sac"):
     algo = algo.lower()
 
     try:
-        env = gym.make(env_id)
-
-        # Determine model paths
-        best_model_path = os.path.join(model_dir, f"{algo.upper()}_{env_id}", "best_model")
-        final_model_path = os.path.join(model_dir, f"{algo.upper()}_{env_id}_final")
-
-        # Load model
-        if os.path.exists(best_model_path + ".zip"):
-            model_path = best_model_path
-        elif os.path.exists(final_model_path + ".zip"):
+        # Get absolute path to models directory
+        script_dir = Path(__file__).parent.absolute()
+        models_root = script_dir / "models"
+        
+        # Define possible model locations
+        final_model_path = models_root / f"{algo.upper()}_{env_id}_final.zip"
+        best_model_path = models_root / f"{algo.upper()}_{env_id}" / "best_model.zip"
+        
+        print(f"\nLooking for models at:")
+        print(f"- {final_model_path}")
+        print(f"- {best_model_path}\n")
+        
+        if final_model_path.exists():
             model_path = final_model_path
+            print(f"Loading final model from: {model_path}")
+        elif best_model_path.exists():
+            model_path = best_model_path
+            print(f"Loading best model from: {model_path}")
         else:
-            raise FileNotFoundError(f"No {algo.upper()} model found for {env_id}")
+            raise FileNotFoundError(
+                f"No model found at:\n{final_model_path}\nor\n{best_model_path}"
+            )
 
+        # Create environment after verifying model exists
+        env = gym.make(env_id)
+        
+        # Load the model
         if algo == "sac":
-            model = SAC.load(model_path, env=env)
-            print("SAC policy network architecture:")
+            model = SAC.load(str(model_path), env=env)  # str() for Path compatibility
+            print("\nSAC policy network architecture:")
             print(model.actor)
         elif algo == "td3":
-            model = TD3.load(model_path, env=env)
-            print("TD3 policy network architecture:")
+            model = TD3.load(str(model_path), env=env)
+            print("\nTD3 policy network architecture:")
             print(model.actor)
         elif algo == "ppo":
-            model = PPO.load(model_path, env=env)
-            print("PPO policy network architecture:")
-            print(model.policy.mlp_extractor)
+            model = PPO.load(str(model_path), env=env)
+            print("\nPPO policy network architecture:")
+            print(model.policy)
         else:
             raise ValueError(f"Unsupported algorithm: {algo}")
 
-        for _ in range(num_episodes):
+        # Data collection
+        print(f"\nCollecting {num_episodes} episodes...")
+        for ep in range(num_episodes):
             obs, _ = env.reset()
             done = False
             while not done:
                 action, _ = model.predict(obs, deterministic=True)
 
-                # Ensure action is always an array (even for discrete PPO actions)
+                # Ensure action is always an array
                 if np.isscalar(action):
                     action = [action]
 
                 data.append(np.concatenate([obs, np.array(action)]))
                 obs, _, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
+            
+            if (ep + 1) % 10 == 0:
+                print(f"Completed episode {ep + 1}/{num_episodes}")
 
+    except Exception as e:
+        print(f"\nError during data collection: {str(e)}")
+        raise
     finally:
         if env is not None:
             env.close()
 
+    # Create and save DataFrame
     columns = [f"state_{i}" for i in range(len(obs))] + [f"action_{i}" for i in range(len(action))]
     df = pd.DataFrame(data, columns=columns)
-    df.to_csv(f"{algo}_{env_id}_data.csv", index=False)
+    output_file = f"{algo}_{env_id}_data.csv"
+    df.to_csv(output_file, index=False)
+    print(f"\nData collection complete. Saved to {output_file}")
+    print("First 5 rows:")
+    print(df.head())
     return df
 
 if __name__ == "__main__":
     data = collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=100, algo="sac")
-    print("Data collection complete. First 5 rows:")
-    print(data.head())
+           
