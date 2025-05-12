@@ -63,9 +63,9 @@ combined_library = GeneralizedLibrary(
 )
 
 # Create SINDy model
-from pysindy.differentiation import FiniteDifference, SmoothedFiniteDifference
+from pysindy.differentiation import SmoothedFiniteDifference
 model = SINDy(
-    optimizer=Lasso(alpha=0.0001, fit_intercept=True, max_iter=300), # changed from 0.01 to 0.1,
+    optimizer=Lasso(alpha=0.00001, fit_intercept=True, max_iter=300), # changed from 0.01 to 0.1,
     feature_library=PolynomialLibrary(degree=2), # changed from degree 3 to degree 2
     discrete_time=False,
     differentiation_method=SmoothedFiniteDifference())

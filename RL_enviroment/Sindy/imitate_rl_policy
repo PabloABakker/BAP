@@ -1,0 +1,66 @@
+import numpy as np
+import pandas as pd
+import pysindy as ps
+from sklearn.model_selection import train_test_split
+import pickle
+import matplotlib.pyplot as plt
+from scipy.interpolate import NearestNDInterpolator
+from sklearn.linear_model import Lasso
+
+from pysindy.feature_library import FourierLibrary, PolynomialLibrary, GeneralizedLibrary
+poly_library = PolynomialLibrary(degree=2)
+fourier_library = FourierLibrary(n_frequencies=2)  
+
+# Combine them
+combined_library = GeneralizedLibrary(libraries=[poly_library, fourier_library])
+
+
+
+def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
+    """
+    Load collected data and apply SINDy to discover the RL policy: state -> action.
+    Automatically adapts to any Gym environment based on CSV structure.
+    """
+    # Load data
+    data = pd.read_csv(data_file)
+
+    # Detect state and action columns dynamically
+    state_columns = [col for col in data.columns if col.startswith("state_")]
+    action_columns = [col for col in data.columns if col.startswith("action_")]
+
+    X = data[state_columns].values  # (N, state_dim)
+    y = data[action_columns].values  # (N, action_dim)
+
+    print(f"State dim: {X.shape[1]}, Action dim: {y.shape[1]}, Samples: {X.shape[0]}")
+
+    # Train/test split
+    X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
+    t = np.arange(X_train.shape[0]) * dt
+
+    # Fit SINDy model
+    model = ps.SINDy(
+        feature_names=state_columns,
+        optimizer=ps.STLSQ(threshold=0.1),
+        # optimizer = Lasso(alpha=0.005, fit_intercept=True, max_iter=500),
+        feature_library=combined_library,
+    )
+    model.fit(X_train, t=t, x_dot=y_train)
+
+    # Save model
+    with open("sindy_policy.pkl", "wb") as f:
+        pickle.dump(model, f)
+
+    # Print summary
+    print("\nLearned SINDy Policy:")
+    model.print()
+
+    # Evaluation
+    y_pred = model.predict(X_test)
+    mse = ((y_pred - y_test) ** 2).mean()
+    nonzero_count = (model.coefficients() != 0).sum()
+    print(f"\nNonzero coefficients: {nonzero_count}")
+    print(f"MSE on test set: {mse:.4f}")
+
+
+if __name__ == "__main__":
+    analyze_with_sindy(data_file=r"sac_CustomDynamicsEnv-v2_data.csv", dt=0.001)  # dt may vary based on env

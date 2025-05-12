@@ -21,8 +21,8 @@ ld_history = []
 deg2rad = np.pi / 180
 
 for i in range(1, len(t_data)):
-    dt = t_data[i] - t_data[i-1]
-    env.dt = dt  # Update the environment's time step
+    # dt = t_data[i] - t_data[i-1]
+    env.dt = 0.002  # Update the environment's time step
 
     # Convert input reference to ld (dihedral length)
     angle_deg = -input_refs[i] / 9600 * 18

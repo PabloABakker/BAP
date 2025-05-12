@@ -2,12 +2,15 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 from scipy.integrate import solve_ivp
+import pygame
 
 class CustomDynamicsEnv(gym.Env):
-    metadata = {'render_modes': ['human']}
+    metadata = {'render_modes': ['human'], 'render_fps': 30}
 
-    def __init__(self):
+    def __init__(self, render_mode=None):
         super(CustomDynamicsEnv, self).__init__()
+
+        self.render_mode = render_mode
 
         # Physical constants
         self.g = 9.8067  # gravity (m/s^2)
@@ -25,8 +28,11 @@ class CustomDynamicsEnv(gym.Env):
         # State: [u, w, theta, theta_dot]
         self.state_dim = 4
         self.observation_space = spaces.Box(
-            low=np.array([-10, -10, -5*np.pi, -30]), 
-            high=np.array([10, 10, 5*np.pi, 30]), 
+            # low=np.array([-10, -10, -5*np.pi, -30]), 
+            # high=np.array([10, 10, 5*np.pi, 30]), 
+            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf]),
+            high=np.array([np.inf, np.inf, np.inf, np.inf]), 
+
             shape=(self.state_dim,), dtype=np.float64
         )
 
@@ -34,17 +40,27 @@ class CustomDynamicsEnv(gym.Env):
         self.action_dim = 1
         self.action_space = spaces.Box(
             low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64
+            # low=np.array([-np.inf]), high=np.array([np.inf]), dtype=np.float64
         )
         
         # Time step for integration
-        self.dt = 0.002  # seconds
-        self.max_steps = 4357
+        self.dt = 0.001  # seconds
+        self.max_steps = 4000
         self.current_step = 0
 
         # Initialize state and ld
         self.ld_prev = 0.0
         self.state = None
+
+        # Stability tracking
+        self.stable_counter = 0
+        self.stable_required = 200  # Steps that the agent must remain stable
+        self.stability_threshold_rad = 0.01  # rad
+        self.stability_threshold_radps = 0.05  # rad/s
+
+
         self.reset()
+
 
     def _full_dynamics(self, t, y, action):
         """
@@ -94,7 +110,7 @@ class CustomDynamicsEnv(gym.Env):
             fun=lambda t, y: self._full_dynamics(t, y, current_action),
             t_span=(0, self.dt),
             y0=self.state,
-            method='Radau',
+            method='RK45',
             t_eval=[self.dt]
         )
         
@@ -111,18 +127,36 @@ class CustomDynamicsEnv(gym.Env):
         self.current_step += 1
         
         # Calculate reward
-        reward = -np.sum(np.square(self.state[2]))  # penalize u, w, theta
+        reward = -np.sum(0.001*self.state[0]**2 + 0.001*self.state[1]**2 + self.state[2]**2 + 0.5*self.state[3]**2)  # penalize  theta, theta_dot
         
-        # Check termination conditions
-        terminated = (self.current_step >= self.max_steps or 
-                     np.any(np.abs(self.state) > 100))
+        # Bonus for stability
+        theta_stable = abs(self.state[2]) < self.stability_threshold_rad
+        theta_dot_stable = abs(self.state[3]) < self.stability_threshold_radps
+
+        if theta_stable and theta_dot_stable:
+            self.stable_counter += 1
+        else:
+            self.stable_counter = 0
+
+        if self.stable_counter >= self.stable_required:
+            reward += 100  # bonus reward
+
+        # Penalize oscillations or runaway values
         if np.any(np.abs(self.state) > 100):
-            reward = -100
+            reward -= 100
+            terminated = True
+        elif self.current_step >= self.max_steps:
+            terminated = True
+        elif self.stable_counter >= self.stable_required:
+            terminated = True
+        else:
+            terminated = False
             
         return self.state.copy(), reward, terminated, False, {}
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
+        self.seed(seed)
         # Reset state
         self.state = np.array([0.00, 0.00, 0.1, 0.00], dtype=np.float64)  # small initial theta (0.1 rad ~ 5.7°)
         self.current_step = 0
@@ -135,9 +169,53 @@ class CustomDynamicsEnv(gym.Env):
         return self.state.copy(), {}
 
     def render(self, mode='human'):
-        print(f"Step: {self.current_step}, State: u={self.state[0]:.2f}, w={self.state[1]:.2f}, "
-              f"θ={self.state[2]:.2f}, θ̇={self.state[3]:.2f}, "
-              f"u_dot={self.u_dot:.2f}, w_dot={self.w_dot:.2f}, θ_ddot={self.theta_ddot:.2f}")
+        if mode != 'human':
+            return
+        
+        # Set background
+        self.screen.fill((255, 255, 255))  # White background
+        
+        # Update the position based on the drone's velocity
+        self.x_pos += self.state[0]  # Update x position based on u (horizontal velocity)
+        self.y_pos += self.state[1]  # Update y position based on w (vertical velocity)
+
+        # Simulate the drone flapping (use theta to show rotation)
+        self.angle = self.state[2]  # Angle for the drone's rotation
+        
+        # Draw the drone
+        # For simplicity, the drone is a rectangle with rotation
+        drone_surface = pygame.Surface((self.drone_width, self.drone_height))
+        drone_surface.fill((0, 0, 255))  # Blue color for the drone
+        rotated_drone = pygame.transform.rotate(drone_surface, np.degrees(self.angle))  # Rotate by theta
+        rotated_rect = rotated_drone.get_rect(center=(self.x_pos, self.y_pos))
+        
+        # Draw the drone on the screen
+        self.screen.blit(rotated_drone, rotated_rect.topleft)
+        
+        # Render the current step and state info
+        font = pygame.font.SysFont('Arial', 18)
+        text = font.render(f"Step: {self.current_step}, u: {self.state[0]:.2f}, w: {self.state[1]:.2f}, "
+                           f"θ: {np.degrees(self.state[2]):.2f}, θ̇: {self.state[3]:.2f}", True, (0, 0, 0))
+        self.screen.blit(text, (10, 10))
+        
+        # Update the display
+        pygame.display.flip()
+        
+        # Delay to create a frame rate (e.g., 30 FPS)
+        self.clock.tick(30)
 
     def close(self):
         pass
+
+    def seed(self, seed=None):
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
+        return [seed]
+
+from gymnasium.envs.registration import register
+
+register(
+    id="CustomDynamicsEnv-v2",
+    entry_point="CustomDynamicsEnv_v2:CustomDynamicsEnv",
+    max_episode_steps=4000  
+)
+
