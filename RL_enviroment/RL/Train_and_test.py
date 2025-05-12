@@ -40,7 +40,7 @@ class MountainCarContinuousRewardWrapper(gym.RewardWrapper):
         return shaped_reward
 
 
-def train(env_id="Pendulum-v1", total_timesteps=100_000, algo="ppo"):
+def train(env_id="Pendulum-v1", total_timesteps=200_000, algo="ppo"):
     env = None
     try:
         # Create and wrap the environment correctly
@@ -60,7 +60,7 @@ def train(env_id="Pendulum-v1", total_timesteps=100_000, algo="ppo"):
             model = SAC(
                 "MlpPolicy",
                 env,
-                learning_rate=1e-3,
+                learning_rate=1e-4,
                 buffer_size=100_000,
                 batch_size=256,
                 tau=0.005,
@@ -77,7 +77,7 @@ def train(env_id="Pendulum-v1", total_timesteps=100_000, algo="ppo"):
             model = TD3(
                 "MlpPolicy",
                 env,
-                learning_rate=1e-3,
+                learning_rate=1e-4,
                 buffer_size=100_000,
                 learning_starts=5_000,           
                 batch_size=256,

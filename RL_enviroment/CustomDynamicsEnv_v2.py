@@ -2,6 +2,7 @@ import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
 from scipy.integrate import solve_ivp
+import pygame
 
 class CustomDynamicsEnv(gym.Env):
     metadata = {'render_modes': ['human'], 'render_fps': 30}
@@ -126,7 +127,7 @@ class CustomDynamicsEnv(gym.Env):
         self.current_step += 1
         
         # Calculate reward
-        reward = -np.sum(self.state[2]**2 + 0.5*self.state[3]**2)  # penalize  theta, theta_dot
+        reward = -np.sum(0.001*self.state[0]**2 + 0.001*self.state[1]**2 + self.state[2]**2 + 0.5*self.state[3]**2)  # penalize  theta, theta_dot
         
         # Bonus for stability
         theta_stable = abs(self.state[2]) < self.stability_threshold_rad
@@ -168,9 +169,40 @@ class CustomDynamicsEnv(gym.Env):
         return self.state.copy(), {}
 
     def render(self, mode='human'):
-        print(f"Step: {self.current_step}, State: u={self.state[0]:.2f}, w={self.state[1]:.2f}, "
-              f"θ={self.state[2]:.2f}, θ̇={self.state[3]:.2f}, "
-              f"u_dot={self.u_dot:.2f}, w_dot={self.w_dot:.2f}, θ_ddot={self.theta_ddot:.2f}")
+        if mode != 'human':
+            return
+        
+        # Set background
+        self.screen.fill((255, 255, 255))  # White background
+        
+        # Update the position based on the drone's velocity
+        self.x_pos += self.state[0]  # Update x position based on u (horizontal velocity)
+        self.y_pos += self.state[1]  # Update y position based on w (vertical velocity)
+
+        # Simulate the drone flapping (use theta to show rotation)
+        self.angle = self.state[2]  # Angle for the drone's rotation
+        
+        # Draw the drone
+        # For simplicity, the drone is a rectangle with rotation
+        drone_surface = pygame.Surface((self.drone_width, self.drone_height))
+        drone_surface.fill((0, 0, 255))  # Blue color for the drone
+        rotated_drone = pygame.transform.rotate(drone_surface, np.degrees(self.angle))  # Rotate by theta
+        rotated_rect = rotated_drone.get_rect(center=(self.x_pos, self.y_pos))
+        
+        # Draw the drone on the screen
+        self.screen.blit(rotated_drone, rotated_rect.topleft)
+        
+        # Render the current step and state info
+        font = pygame.font.SysFont('Arial', 18)
+        text = font.render(f"Step: {self.current_step}, u: {self.state[0]:.2f}, w: {self.state[1]:.2f}, "
+                           f"θ: {np.degrees(self.state[2]):.2f}, θ̇: {self.state[3]:.2f}", True, (0, 0, 0))
+        self.screen.blit(text, (10, 10))
+        
+        # Update the display
+        pygame.display.flip()
+        
+        # Delay to create a frame rate (e.g., 30 FPS)
+        self.clock.tick(30)
 
     def close(self):
         pass
@@ -186,3 +218,4 @@ register(
     entry_point="CustomDynamicsEnv_v2:CustomDynamicsEnv",
     max_episode_steps=4000  
 )
+
