@@ -35,4 +35,4 @@ You should now have all the dependancies to run the whole pipeline
 
 # Finally the validation of the found model
 - Inside of the Sindy repository type the following in your terminal: python test_sindy_policy.py --env enviroment --algo algorithmn --dt dt --render
-- Congratulations you should now see both policies rendered on the enviroment and a comparison of the amount of parameters needed aswell as the states plottet against eachother
+- Congratulations you should now see both policies rendered on the enviroment and a comparison of the amount of parameters needed aswell as the states plotted against eachother
