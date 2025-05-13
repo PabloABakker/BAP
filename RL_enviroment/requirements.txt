@@ -1,6 +1,7 @@
 # pip install -r requirements.txt
 numpy
 pandas
+pygame
 scikit-learn
 tensorboard
 gymnasium
@@ -8,5 +9,4 @@ stable-baselines3
 matplotlib
 sb3_contrib
 argparse
-sys
 pysindy
