@@ -8,6 +8,12 @@ from sklearn.linear_model import Lasso
 from scipy import optimize
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import CustomDynamicsEnv_v2  # This runs the registration
 
 # 1. Lorenz system
 def lorenz(t, state, sigma=10.0, rho=28.0, beta=8/3):

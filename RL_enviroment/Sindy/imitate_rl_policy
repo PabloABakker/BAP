@@ -18,7 +18,120 @@ fourier_library = FourierLibrary(n_frequencies=1)
 # Combine them
 combined_library = GeneralizedLibrary(libraries=[poly_library, fourier_library])
 
+def hardware_efficient_library(var_names=("x", "y", "z")):
+    functions = [
+        # Constant
+        lambda x, y, z: 1.0,
 
+        # Linear
+        lambda x, y, z: x,
+        lambda x, y, z: y,
+        lambda x, y, z: z,
+
+        # Quadratic
+        lambda x, y, z: x**2,
+        lambda x, y, z: y**2,
+        lambda x, y, z: z**2,
+
+        # Interaction terms
+        lambda x, y, z: x*y,
+        lambda x, y, z: x*z,
+        lambda x, y, z: y*z,
+
+        # A + B*C combinations (non-redundant)
+        lambda x, y, z: x + y*z,
+        lambda x, y, z: y + x*z,
+        lambda x, y, z: z + x*y,
+
+        # (A + B)*C combinations (non-redundant)
+        lambda x, y, z: (x + y)*z,
+        lambda x, y, z: (x + z)*y,
+        lambda x, y, z: (y + z)*x,
+
+        # (A + B)*C + D combinations (non-redundant)
+        lambda x, y, z: (x + y)*z + x,
+        lambda x, y, z: (x + z)*y + z,
+        lambda x, y, z: (y + z)*x + z,
+
+        # ((A + B)^2) + C combinations (non-redundant)
+        lambda x, y, z: ((y + z)**2) + x,
+        lambda x, y, z: ((z + x)**2) + y,
+        lambda x, y, z: ((x + y)**2) + z,
+
+        # New composite squared terms
+        lambda x, y, z: (x + y*z)**2,
+        lambda x, y, z: (y + x*z)**2,
+        lambda x, y, z: (z + x*y)**2,
+
+        lambda x, y, z: ((x + y)*z)**2,
+        lambda x, y, z: ((x + z)*y)**2,
+        lambda x, y, z: ((y + z)*x)**2,
+
+        lambda x, y, z: ((x + y)*z + x)**2,
+        lambda x, y, z: ((x + z)*y + z)**2,
+        lambda x, y, z: ((y + z)*x + z)**2,
+
+        # Composite squared + variable
+        lambda x, y, z: (x + y*z)**2 + x,
+        lambda x, y, z: (y + x*z)**2 + y,
+        lambda x, y, z: (z + x*y)**2 + z,
+
+        lambda x, y, z: ((x + y)*z)**2 + x,
+        lambda x, y, z: ((x + z)*y)**2 + y,
+        lambda x, y, z: ((y + z)*x)**2 + z,
+
+        lambda x, y, z: ((x + y)*z + x)**2 + x,
+        lambda x, y, z: ((x + z)*y + z)**2 + y,
+        lambda x, y, z: ((y + z)*x + z)**2 + z
+    ]
+
+    function_names = [
+        lambda x, y, z: "1",
+        lambda x, y, z: "x",
+        lambda x, y, z: "y",
+        lambda x, y, z: "z",
+        lambda x, y, z: "x**2",
+        lambda x, y, z: "y**2",
+        lambda x, y, z: "z**2",
+        lambda x, y, z: "x*y",
+        lambda x, y, z: "x*z",
+        lambda x, y, z: "y*z",
+        lambda x, y, z: "x + y*z",
+        lambda x, y, z: "y + x*z",
+        lambda x, y, z: "z + x*y",
+        lambda x, y, z: "(x + y)*z",
+        lambda x, y, z: "(x + z)*y",
+        lambda x, y, z: "(y + z)*x",
+        lambda x, y, z: "(x + y)*z + x",
+        lambda x, y, z: "(x + z)*y + z",
+        lambda x, y, z: "(y + z)*x + z",
+        lambda x, y, z: "((y + z)**2) + x",
+        lambda x, y, z: "((z + x)**2) + y",
+        lambda x, y, z: "((x + y)**2) + z",
+        lambda x, y, z: "(x + y*z)**2",
+        lambda x, y, z: "(y + x*z)**2",
+        lambda x, y, z: "(z + x*y)**2",
+        lambda x, y, z: "((x + y)*z)**2",
+        lambda x, y, z: "((x + z)*y)**2",
+        lambda x, y, z: "((y + z)*x)**2",
+        lambda x, y, z: "((x + y)*z + x)**2",
+        lambda x, y, z: "((x + z)*y + z)**2",
+        lambda x, y, z: "((y + z)*x + z)**2",
+        lambda x, y, z: "(x + y*z)**2 + x",
+        lambda x, y, z: "(y + x*z)**2 + y",
+        lambda x, y, z: "(z + x*y)**2 + z",
+        lambda x, y, z: "((x + y)*z)**2 + x",
+        lambda x, y, z: "((x + z)*y)**2 + y",
+        lambda x, y, z: "((y + z)*x)**2 + z",
+        lambda x, y, z: "((x + y)*z + x)**2 + x",
+        lambda x, y, z: "((x + z)*y + z)**2 + y",
+        lambda x, y, z: "((y + z)*x + z)**2 + z"
+    ]
+
+    return CustomLibrary(
+        library_functions=functions,
+        function_names=function_names
+    )
 
 def save_sindy_model(model, save_prefix="sindy_model"):
     """
@@ -28,7 +141,6 @@ def save_sindy_model(model, save_prefix="sindy_model"):
     with open(f"{save_prefix}_feature_names.json", "w") as f:
         json.dump(model.get_feature_names(), f)
     print(f"✅ SINDy model saved to '{save_prefix}_coefficients.npy' and '.json'")
-
 
 
 def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
@@ -72,7 +184,7 @@ def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
     # optimizer = Lasso(alpha=0.0001, fit_intercept=True, max_iter=500)
 
     # library = combined_library
-    library = custom_library
+    library = combined_library
     model = ps.SINDy( optimizer = optimizer, feature_library=library)
     model.fit(X_train, t=t, x_dot=y_train)
 

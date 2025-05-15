@@ -1,6 +1,11 @@
 import numpy as np
-from CustomDynamicsEnv_v2 import CustomDynamicsEnv  # Assuming your env is saved in this file
+import os
+import sys
 import matplotlib.pyplot as plt
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import CustomDynamicsEnv_v2  # This runs the registration
 
 def generate_training_data(env, n_trajectories=50, steps_per_trajectory=200, noise_level=0.0):
     """
@@ -83,6 +88,7 @@ def plot_sample_trajectory(X, U, traj_idx=0):
 
 if __name__ == "__main__":
     # Create environment
+    from CustomDynamicsEnv_v2 import CustomDynamicsEnv
     env = CustomDynamicsEnv()
     
     # Generate data
