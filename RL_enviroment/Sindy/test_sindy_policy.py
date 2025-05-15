@@ -34,7 +34,7 @@ def load_sindy_model(env_id):
         print(f"SINDy model not found at: {model_path}. Trying fallback path...")
 
         # Fallback path if the model is not found in the predefined path
-        fallback_path = Path(r"C:\Users\pablo\OneDrive\Bureaublad\Python\Machine learning\BAP_TOTAL\Bap_self\BAP\RL_enviroment\Sindy\sindy_policy.pkl")
+        fallback_path = Path("C:/Users/const/Desktop/BAP/BAP/RL_enviroment/Sindy/sindy_policy.pkl")
         if fallback_path.exists():
             print(f"Loading fallback SINDy model from: {fallback_path}")
             model_path = fallback_path
@@ -169,16 +169,23 @@ def compare_trajectories(env_id="CartPole-v1", rl_algo="ppo", dt=0.001, render=F
     if sindy_actions.ndim == 1:
         sindy_actions = sindy_actions.reshape(-1, 1)
 
+    # --- Plot action trajectories for SINDy ---
     plt.figure(figsize=(12, 4))
     for i in range(sindy_actions.shape[1]):
         plt.plot(timestamps, sindy_actions[:, i], '--', label=f"SINDy action_{i}")
-        plt.plot(timestamps, rl_actions[:, i], '-', label=f"{rl_algo.upper()} action_{i}")
+        
+        if rl_actions.ndim == 1:  # For discrete actions, just plot them directly
+            plt.plot(timestamps, rl_actions, '-', label=f"{rl_algo.upper()} action_{i}")
+        else:  # For continuous actions, plot each dimension
+            plt.plot(timestamps, rl_actions[:, i], '-', label=f"{rl_algo.upper()} action_{i}")
+
     plt.xlabel("Time (s)")
     plt.ylabel("Action")
     plt.title(f"Action Trajectories: SINDy vs {rl_algo.upper()}")
     plt.legend()
     plt.tight_layout()
     plt.show()
+
 
     # Final comparison of coefficients
     print("\nComparison of models:")

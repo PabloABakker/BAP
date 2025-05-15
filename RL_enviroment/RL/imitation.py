@@ -101,5 +101,5 @@ def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
     print(df.head())
     return df
 
-if __name__ == "_main_":
+if __name__ == "__main__":
     data = collect_data(env_id="CartPole-v1", num_episodes=100, algo="ppo")
