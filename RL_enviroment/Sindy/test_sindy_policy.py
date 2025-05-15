@@ -9,6 +9,7 @@ import sys
 from pathlib import Path
 from stable_baselines3 import PPO, SAC, TD3
 from sklearn.metrics import mean_squared_error
+import dill as pickle
 
 # --- Add path to custom environment module ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
@@ -19,7 +20,7 @@ def load_sindy_model(env_id):
     script_dir = Path(__file__).parent.parent.absolute()
     model_paths = {
         "CustomDynamicsEnv-v2": script_dir / "Sindy_best_found_policies" / "FlappingWing-v0" / "sindy_policy_custom.pkl",
-        "Pendulum-v1": script_dir / "Sindy_best_found_policies" / "Pendulum" / "sindy_policy_pendulum_80_params_6th_order_poly.pkl",
+        "Pendulum-v1": script_dir / "Sindy_best_found_policies" / "Pendulum" / "sindy_policy_pendulum_80_params_6th_order_pol.pkl",
         "Acrobot-v1": script_dir / "Sindy_best_found_policies" / "Acrobot" / "sindy_policy_acrobot_fourier_lib4_plus_poly4_lasso.pkl",
         "CartPole-v1": script_dir / "Sindy_best_found_policies" / "Cartpole" / "sindy_policy_cartpole_15params_3rth_order_poly.pkl",
         "MountainCarContinuous-v0": script_dir / "Sindy_best_found_policies" / "Mountain car" / "sindy_policy_td3_mountaincarcontinuous_5_params_lasso.pkl",
@@ -143,7 +144,7 @@ def compare_trajectories(env_id="CartPole-v1", rl_algo="ppo", dt=0.001, render=F
     print(f"SINDy reward: {sindy_reward:.2f}")
 
     # Count SINDy model parameters
-    sindy_params = np.count_nonzero(np.abs(coefficients) > 1e-6)  # Number of non-zero coefficients
+    sindy_params = np.count_nonzero(np.abs(coefficients) > 1e-11)  # Number of non-zero coefficients
     print(f"Number of parameters in SINDy model: {sindy_params}")
 
     # Ensure matching lengths for plotting
