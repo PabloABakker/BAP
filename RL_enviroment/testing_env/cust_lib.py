@@ -8,6 +8,10 @@ from sklearn.linear_model import Lasso
 from scipy import optimize
 import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
+from quantization import FixedPointVisualizer
+
+
+fpv = FixedPointVisualizer(draw=False, int_bits=5, frac_bits=12)
 
 # 1. Lorenz system
 def lorenz(t, state, sigma=10.0, rho=28.0, beta=8/3):
@@ -218,7 +222,7 @@ class HWConstrainedSTLSQ(STLSQ):
         super().__init__(alpha=alpha, threshold=threshold, max_iter=max_iter, **kwargs)
         self.feature_weights = None if feature_weights is None else np.asarray(feature_weights)
 
-    def _fit(self, x, y):
+    def _reduce(self, x, y):
         n_samples, n_features = x.shape
         n_targets = y.shape[1]
         Xi = np.zeros((n_features, n_targets))
@@ -249,9 +253,11 @@ class HWConstrainedSTLSQ(STLSQ):
             # Example (dummy logic):
             # Xi[0, :] = 0  # force zeroing of first feature if needed
             # Xi = np.clip(Xi, -1, 1)
-
+            # print(np.array(Xi))
+            Xi = fpv.quantize(Xi)
+            # print(Xi)
             # Convergence check
-            if np.linalg.norm(Xi - Xi_old) < self.tol:
+            if np.linalg.norm(Xi - Xi_old) < 1e-6:
                 break
 
         return Xi
@@ -283,9 +289,12 @@ lhs = np.eye(n_feat * n_targ)
 #     max_iter=50000
 # )
 
-opt = HWConstrainedSTLSQ(threshold=0.01, alpha=0.01, fit_intercept=True)
+opt = HWConstrainedSTLSQ(threshold=0.01, alpha=0.01)
 model = ps.SINDy(feature_library=lib, optimizer=opt)
+
 model.fit(x, t=dt)
+model.print()
+model.coefficients()[:]  = fpv.quantize(model.coefficients())
 print("\nLearned SINDy model:")
 model.print()
 
