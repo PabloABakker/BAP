@@ -127,7 +127,7 @@ class CustomDynamicsEnv(gym.Env):
         self.current_step += 1
         
         # Calculate reward
-        reward = -np.sum(0.001*self.state[0]**2 + 0.001*self.state[1]**2 + self.state[2]**2 + 0.5*self.state[3]**2)  # penalize  theta, theta_dot
+        reward = -np.sum(self.state[2]**2 + 0.5*self.state[3]**2)  # penalize  theta, theta_dot
         
         # Bonus for stability
         theta_stable = abs(self.state[2]) < self.stability_threshold_rad
@@ -139,11 +139,11 @@ class CustomDynamicsEnv(gym.Env):
             self.stable_counter = 0
 
         if self.stable_counter >= self.stable_required:
-            reward += 100  # bonus reward
+            reward += 50  # bonus reward
 
         # Penalize oscillations or runaway values
-        if np.any(np.abs(self.state) > 100):
-            reward -= 100
+        if np.any(np.abs(self.state) > 25):
+            reward -= 50
             terminated = True
         elif self.current_step >= self.max_steps:
             terminated = True
