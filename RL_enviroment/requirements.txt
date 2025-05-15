@@ -10,3 +10,4 @@ matplotlib
 sb3_contrib
 argparse
 pysindy
+cvxpy

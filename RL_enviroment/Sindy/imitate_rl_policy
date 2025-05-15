@@ -1,18 +1,86 @@
 import numpy as np
 import pandas as pd
 import pysindy as ps
+from pysindy.optimizers import STLSQ, SR3
+from itertools import combinations_with_replacement, permutations, product, combinations
 from sklearn.model_selection import train_test_split
-import pickle
+import dill as pickle
 import matplotlib.pyplot as plt
 from scipy.interpolate import NearestNDInterpolator
 from sklearn.linear_model import Lasso
+from pysindy.feature_library import FourierLibrary, PolynomialLibrary, GeneralizedLibrary,  CustomLibrary
+import json
 
-from pysindy.feature_library import FourierLibrary, PolynomialLibrary, GeneralizedLibrary
-poly_library = PolynomialLibrary(degree=2)
-fourier_library = FourierLibrary(n_frequencies=2)  
+
+# Make custom library
+vars = ['x', 'y', 'z']
+
+def make_function(expr_str, var_names=('x', 'y', 'z')):
+    code = compile(expr_str, "<string>", "eval")
+    return lambda x, y, z: eval(code, {}, dict(zip(var_names, (x, y, z))))
+
+def generate_expressions(vars=('x', 'y', 'z'), max_order=3):
+    exprs = set()
+
+    # Order 0 (constant)
+    exprs.add("1")
+
+    # Order 1 (linear terms)
+    for v in vars:
+        exprs.add(v)
+
+    # Order 2 (custom combos + quadratic)
+    if max_order >= 2:
+        for v in vars:
+            exprs.add(f"{v}**2")
+
+        for a, b in combinations(vars, 2):
+            exprs.add(f"{a}*{b}")
+            exprs.add(f"{a}+{b}")
+            exprs.add(f"{a}-{b}")
+
+    # Order ≥ 3 (only polynomial monomials)
+    for order in range(3, max_order + 1):
+        # All integer exponent combos (a, b, c) such that a + b + c = order
+        for powers in product(range(order + 1), repeat=len(vars)):
+            if sum(powers) == order:
+                # e.g. x**2 * y**1 * z**0
+                terms = [f"{v}**{p}" if p > 1 else (v if p == 1 else "")
+                         for v, p in zip(vars, powers)]
+                terms = [term for term in terms if term]  # remove empty
+                expr = '*'.join(terms)
+                exprs.add(expr)
+
+    return sorted(exprs)
+
+
+expr_list = generate_expressions(max_order=6)
+
+functions = [make_function(expr) for expr in expr_list]
+function_names = [lambda x, y, z, s=expr: s for expr in expr_list]
+
+custom_library = CustomLibrary(
+    library_functions=functions,
+    function_names=function_names
+)
+
+# Define the polynomial and Fourier libraries for testing
+poly_library = PolynomialLibrary(degree=3)
+fourier_library = FourierLibrary(n_frequencies=1)  
 
 # Combine them
 combined_library = GeneralizedLibrary(libraries=[poly_library, fourier_library])
+
+
+
+def save_sindy_model(model, save_prefix="sindy_model"):
+    """
+    Save SINDy model coefficients and feature names separately.
+    """
+    np.save(f"{save_prefix}_coefficients.npy", model.coefficients())
+    with open(f"{save_prefix}_feature_names.json", "w") as f:
+        json.dump(model.get_feature_names(), f)
+    print(f"✅ SINDy model saved to '{save_prefix}_coefficients.npy' and '.json'")
 
 
 
@@ -37,18 +105,34 @@ def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
     X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
     t = np.arange(X_train.shape[0]) * dt
 
+
+    # This is needed for the constrained optimizer
+    custom_library.fit(X)
+    n_features = custom_library.n_output_features_
+    n_targets = y_train.shape[1]
+
+    constraint_rhs = np.array([10 for _ in range(n_features * n_targets)])
+    consttraint_lhs = np.eye(n_features * n_targets,n_features * n_targets)
+
     # Fit SINDy model
-    model = ps.SINDy(
-        feature_names=state_columns,
-        # optimizer=ps.STLSQ(threshold=0.1),
-        optimizer = Lasso(alpha=0.0001, fit_intercept=True, max_iter=500),
-        feature_library=combined_library,
-    )
+    # optimizer = STLSQ(threshold=0.001, alpha=10000, fit_intercept=True)
+    optimizer = ps.ConstrainedSR3(constraint_rhs=constraint_rhs, 
+                                constraint_lhs=consttraint_lhs, 
+                                inequality_constraints= True, 
+                                thresholder="l1",
+                                threshold=0.001,
+                                max_iter=10000)
+    # optimizer = Lasso(alpha=0.0001, fit_intercept=True, max_iter=500)
+
+    # library = combined_library
+    library = custom_library
+    model = ps.SINDy( optimizer = optimizer, feature_library=library)
     model.fit(X_train, t=t, x_dot=y_train)
 
     # Save model
     with open("sindy_policy.pkl", "wb") as f:
         pickle.dump(model, f)
+    # save_sindy_model(model, save_prefix="sindy_policy")
 
     # Print summary
     print("\nLearned SINDy Policy:")
@@ -63,4 +147,4 @@ def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
 
 
 if __name__ == "__main__":
-    analyze_with_sindy(data_file=r"sac_CustomDynamicsEnv-v2_data.csv", dt=0.001)  # dt may vary based on env
+    analyze_with_sindy(data_file=r"C:\Users\pablo\OneDrive\Bureaublad\Python\Machine learning\BAP_TOTAL\Bap_self\BAP\RL_enviroment\Sindy_best_found_policies\Pendulum\sac_Pendulum-v1_data.csv", dt=0.001)  # dt may vary based on env
