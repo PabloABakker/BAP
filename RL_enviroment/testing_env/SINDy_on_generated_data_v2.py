@@ -8,7 +8,7 @@ from sklearn.linear_model import Lasso
 from pysindy.optimizers import SR3
 
 # Load saved data
-data = np.load('dynamics_data.npz')
+data = np.load(r"C:\Users\pablo\OneDrive\Bureaublad\Python\Machine learning\BAP_TOTAL\Bap_self\BAP\RL_enviroment\testing_env\dynamics_data.npz", allow_pickle=True)
 
 X = data['X']
 U = data['U']
@@ -65,7 +65,8 @@ combined_library = GeneralizedLibrary(
 # Create SINDy model
 from pysindy.differentiation import SmoothedFiniteDifference
 model = SINDy(
-    optimizer=Lasso(alpha=0.00001, fit_intercept=True, max_iter=300), # changed from 0.01 to 0.1,
+    # optimizer=Lasso(alpha=0.000001, fit_intercept=True, max_iter=300), # changed from 0.01 to 0.1,
+    optimizer = STLSQ(threshold=0.1, fit_intercept=True),
     feature_library=PolynomialLibrary(degree=2), # changed from degree 3 to degree 2
     discrete_time=False,
     differentiation_method=SmoothedFiniteDifference())

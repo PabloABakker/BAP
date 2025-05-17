@@ -23,7 +23,32 @@ log_dir = "logs"
 os.makedirs(model_dir, exist_ok=True)
 os.makedirs(log_dir, exist_ok=True)
 
-# Custom reward wrapper for MountainCarContinuous was needed for converging in a reasonable amount of episodesw
+
+
+
+# Custom reward wrappers 
+class ShiftedPendulumObservationWrapper(gym.ObservationWrapper):
+    def __init__(self, env, angle_shift_rad=1.0):
+        super().__init__(env)
+        self.angle_shift = angle_shift_rad
+
+    def observation(self, obs):
+        # Decompose the observation
+        cos_theta, sin_theta, theta_dot = obs
+
+        # Recover actual theta
+        actual_theta = np.arctan2(sin_theta, cos_theta)
+
+        # Add the shift
+        shifted_theta = actual_theta + self.angle_shift
+
+        # Recompute cos and sin of shifted theta
+        cos_shifted = np.cos(shifted_theta)
+        sin_shifted = np.sin(shifted_theta)
+
+        # Return the modified observation
+        return np.array([cos_shifted, sin_shifted, theta_dot], dtype=np.float32)
+
 class MountainCarContinuousRewardWrapper(gym.RewardWrapper):
     def __init__(self, env):
         super().__init__(env)
@@ -38,9 +63,28 @@ class MountainCarContinuousRewardWrapper(gym.RewardWrapper):
         if pos >= 0.45:
             shaped_reward += 10
         return shaped_reward
+    
+class PendulumTrackingWrapper(gym.RewardWrapper):
+    def __init__(self, env, theta_ref=0.0, theta_dot_ref=0.0):
+        super().__init__(env)
+        self.theta_ref = theta_ref
+        self.theta_dot_ref = theta_dot_ref
+
+    def reward(self, reward):
+        # Get actual state from unwrapped environment
+        theta, theta_dot = self.unwrapped.state
+
+        # Tracking error
+        error = (theta - self.theta_ref) ** 2 + (theta_dot - self.theta_dot_ref) ** 2
+
+        # Negative of error to reward lower error
+        return -error
 
 
-def train(env_id="Pendulum-v1", total_timesteps=100_000, algo="ppo"):
+
+
+
+def train(env_id="Pendulum-v1", total_timesteps=80_000, algo="ppo"):
     env = None
     try:
         # Create and wrap the environment correctly
@@ -77,12 +121,12 @@ def train(env_id="Pendulum-v1", total_timesteps=100_000, algo="ppo"):
             model = TD3(
                 "MlpPolicy",
                 env,
-                learning_rate=5e-5,
+                learning_rate=1e-4,
                 buffer_size=100_000,
                 learning_starts=5_000,           
                 batch_size=256,
                 tau=0.005,
-                gamma=0.98,
+                gamma=0.99,
                 train_freq=(1, "step"),
                 gradient_steps=-1,                
                 action_noise=action_noise,        
@@ -151,6 +195,10 @@ def test(env_id="Pendulum-v1", render=True, algo="ppo"):
     env = None
     try:
         env = gym.make(env_id, render_mode="human" if render else None)
+
+        # if env_id == "Pendulum-v1":
+        #     env = ShiftedPendulumObservationWrapper(env, angle_shift_rad=np.pi/6)
+
 
         best_model_path = os.path.join(model_dir, f"{algo.upper()}_{env_id}", "best_model")
         final_model_path = os.path.join(model_dir, f"{algo.upper()}_{env_id}_final")

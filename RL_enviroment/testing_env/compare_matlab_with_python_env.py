@@ -1,6 +1,14 @@
 import numpy as np
 import matplotlib.pyplot as plt
-from CustomDynamicsEnv_v2 import CustomDynamicsEnv  # Adjust filename if needed
+import os
+import sys
+
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+
+import CustomDynamicsEnv_v2  # This runs the registration
+
+from CustomDynamicsEnv_v2 import CustomDynamicsEnv
+
 
 # Load data
 input_refs = np.loadtxt(r"C:\Users\pablo\OneDrive\Bureaublad\Python\Machine learning\BAP_TOTAL\Bap_self\BAP\data.txt")
