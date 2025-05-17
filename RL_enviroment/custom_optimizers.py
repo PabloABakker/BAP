@@ -4,6 +4,8 @@ from pysindy.optimizers import ConstrainedSR3, STLSQ
 
 __all__ = ["HWConstrainedSR3"]
 
+
+
 class HWConstrainedSR3(ConstrainedSR3):
     def __init__(
         self,
@@ -95,9 +97,10 @@ class HWConstrainedSR3(ConstrainedSR3):
         return Xi
 
 class HWConstrainedSTLSQ(STLSQ):
-    def __init__(self, alpha=0.1, threshold=0.1, max_iter=20, tol=1e-5, feature_weights=None, **kwargs):
-        super().__init__(alpha=alpha, threshold=threshold, max_iter=max_iter, tol=tol, **kwargs)
+    def __init__(self, quantizer, alpha=0.1, threshold=0.1, max_iter=20, feature_weights=None, **kwargs):
+        super().__init__(alpha=alpha, threshold=threshold, max_iter=max_iter, **kwargs)
         self.feature_weights = None if feature_weights is None else np.asarray(feature_weights)
+        self.quantizer = quantizer
 
     def _fit(self, x, y):
         n_samples, n_features = x.shape
@@ -130,9 +133,10 @@ class HWConstrainedSTLSQ(STLSQ):
             # Example (dummy logic):
             # Xi[0, :] = 0  # force zeroing of first feature if needed
             # Xi = np.clip(Xi, -1, 1)
+            Xi = self.squantizer.quantize(Xi)
 
             # Convergence check
-            if np.linalg.norm(Xi - Xi_old) < self.tol:
+            if np.linalg.norm(Xi - Xi_old) < 1e-6:
                 break
 
         return Xi

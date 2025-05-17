@@ -72,12 +72,12 @@ def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
                 action, _ = model.predict(obs, deterministic=True)
 
                 # Ensure action is a scalar (not an array)
-                action = action.item()  # Convert action to scalar
+                action = np.atleast_1d(action).flatten()  # Convert action to scalar
 
                 # Convert obs to 1D for consistency
                 obs_array = np.atleast_1d(obs)
 
-                data.append(np.concatenate([obs_array, np.array([action])]))
+                data.append(np.concatenate([obs_array, action]))
                 obs, _, terminated, truncated, _ = env.step(action)
                 done = terminated or truncated
             
@@ -102,4 +102,4 @@ def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
     return df
 
 if __name__ == "__main__":
-    data = collect_data(env_id="CartPole-v1", num_episodes=100, algo="ppo")
+    data = collect_data(env_id="Pendulum-v1", num_episodes=50, algo="sac")

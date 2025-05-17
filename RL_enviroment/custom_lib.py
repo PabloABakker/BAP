@@ -1,4 +1,3 @@
-from pysindy import CustomLibrary
 def hardware_efficient_library(var_names=("x", "y", "z")):
     functions = [
         # Constant

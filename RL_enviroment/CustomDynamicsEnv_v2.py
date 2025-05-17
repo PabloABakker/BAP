@@ -25,14 +25,14 @@ class CustomDynamicsEnv(gym.Env):
         self.ly = 0.081  # length in y-direction (m)
         self.f = 16.584013596491230  # fixed frequency (Hz)
 
+        # Reference values
+        self.ref = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64)  # [u_ref, w_ref, theta_ref, theta_dot_ref]
+
         # State: [u, w, theta, theta_dot]
         self.state_dim = 4
         self.observation_space = spaces.Box(
-            # low=np.array([-10, -10, -5*np.pi, -30]), 
-            # high=np.array([10, 10, 5*np.pi, 30]), 
             low=np.array([-np.inf, -np.inf, -np.inf, -np.inf]),
             high=np.array([np.inf, np.inf, np.inf, np.inf]), 
-
             shape=(self.state_dim,), dtype=np.float64
         )
 
@@ -40,11 +40,10 @@ class CustomDynamicsEnv(gym.Env):
         self.action_dim = 1
         self.action_space = spaces.Box(
             low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64
-            # low=np.array([-np.inf]), high=np.array([np.inf]), dtype=np.float64
         )
         
         # Time step for integration
-        self.dt = 0.001  # seconds
+        self.dt = 0.001  
         self.max_steps = 4000
         self.current_step = 0
 
@@ -54,8 +53,8 @@ class CustomDynamicsEnv(gym.Env):
 
         # Stability tracking
         self.stable_counter = 0
-        self.stable_required = 200  # Steps that the agent must remain stable
-        self.stability_threshold_rad = 0.01  # rad
+        self.stable_required = 50  # Steps that the agent must remain stable
+        self.stability_threshold_rad = 0.005  # rad
         self.stability_threshold_radps = 0.05  # rad/s
 
 
@@ -97,11 +96,15 @@ class CustomDynamicsEnv(gym.Env):
         ) / self.Iyy
         
         return [u_dot, w_dot, theta_dot, theta_ddot]
+    
+    def reference(self, ref):
+        u_ref, w_ref, theta_ref, theta_dot_ref = ref[0], ref[1], ref[2], ref[3]
+        return u_ref, w_ref, theta_ref, theta_dot_ref
 
     def step(self, action):
-        """
-        Step function using solve_ivp with full state integration.
-        """
+        # Get reference values
+        u_ref, w_ref, theta_ref, theta_dot_ref = self.reference(self.ref)
+
         # Store current action for ld_dot calculation
         current_action = np.clip(action, self.action_space.low, self.action_space.high)
         
@@ -126,26 +129,30 @@ class CustomDynamicsEnv(gym.Env):
         
         self.current_step += 1
         
+
+
         # Calculate reward
-        reward = -np.sum(self.state[2]**2 + 0.5*self.state[3]**2)  # penalize  theta, theta_dot
+        reward = -np.sum(+ (self.state[2]-theta_ref)**2 + 0.1*(self.state[3]-theta_dot_ref)**2)  # penalize  theta, theta_dot
         
         # Bonus for stability
-        theta_stable = abs(self.state[2]) < self.stability_threshold_rad
-        theta_dot_stable = abs(self.state[3]) < self.stability_threshold_radps
+        theta_stable = abs(self.state[2]-theta_ref) < self.stability_threshold_rad
+        theta_dot_stable = abs(self.state[3]-theta_dot_ref) < self.stability_threshold_radps
 
         if theta_stable and theta_dot_stable:
             self.stable_counter += 1
         else:
             self.stable_counter = 0
 
+        # bonus reward
         if self.stable_counter >= self.stable_required:
-            reward += 50  # bonus reward
+            reward += 50  
 
         # Penalize oscillations or runaway values
-        if np.any(np.abs(self.state) > 25):
-            reward -= 50
-            terminated = True
-        elif self.current_step >= self.max_steps:
+        if np.any(np.abs(self.state-self.ref) > 5):
+            reward -= 10
+
+        # Termination conditions
+        if self.current_step >= self.max_steps:
             terminated = True
         elif self.stable_counter >= self.stable_required:
             terminated = True
@@ -157,16 +164,24 @@ class CustomDynamicsEnv(gym.Env):
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.seed(seed)
+        rng = np.random.default_rng(seed)  # Create a seed-specific generator
+
+         # Sample random initial state using local RNG
+        low = np.array([-1.0, -1.0, -1.0, -1.0])
+        high = np.array([1.0, 1.0, 1.0, 1.0])
+        self.state = rng.uniform(low, high)
         # Reset state
-        self.state = np.array([0.00, 0.00, 0.1, 0.00], dtype=np.float64)  # small initial theta (0.1 rad ~ 5.7°)
+        # self.state = np.array([1.00, 1.00, 1, 0.1], dtype=np.float64)  # small initial theta (0.1 rad ~ 5.7°)
         self.current_step = 0
         self.ld_prev = 0.0
+
         # Reset derivatives
         self.u_dot = 0.0
         self.w_dot = 0.0
         self.theta_dot = 0.0
         self.theta_ddot = 0.0
         return self.state.copy(), {}
+    
 
     def render(self, mode='human'):
         if mode != 'human':
