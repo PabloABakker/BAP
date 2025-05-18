@@ -53,7 +53,7 @@ class CustomDynamicsEnv(gym.Env):
 
         # Stability tracking
         self.stable_counter = 0
-        self.stable_required = 50  # Steps that the agent must remain stable
+        self.stable_required = 10  # Steps that the agent must remain stable
         self.stability_threshold_rad = 0.005  # rad
         self.stability_threshold_radps = 0.05  # rad/s
 
@@ -132,7 +132,7 @@ class CustomDynamicsEnv(gym.Env):
 
 
         # Calculate reward
-        reward = -np.sum(+ (self.state[2]-theta_ref)**2 + 0.1*(self.state[3]-theta_dot_ref)**2)  # penalize  theta, theta_dot
+        reward = -np.sum((self.state[2]-theta_ref)**2 + 0.5*(self.state[3]-theta_dot_ref)**2)  # penalize  theta, theta_dot
         
         # Bonus for stability
         theta_stable = abs(self.state[2]-theta_ref) < self.stability_threshold_rad
@@ -149,7 +149,7 @@ class CustomDynamicsEnv(gym.Env):
 
         # Penalize oscillations or runaway values
         if np.any(np.abs(self.state-self.ref) > 5):
-            reward -= 10
+            reward -= 5
 
         # Termination conditions
         if self.current_step >= self.max_steps:
