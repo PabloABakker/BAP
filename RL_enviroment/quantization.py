@@ -45,7 +45,9 @@ class FixedPointVisualizer:
         for n in n_list:
             for y in range(n):
                 values.add(2 ** (-n) + 2 ** (-y))
+                values.add(2 ** (-n) - 2 ** (-y))
                 values.add(-(2 ** (-n) + 2 ** (-y)))
+                values.add(-(2 ** (-n) - 2 ** (-y)))
         return sorted(values)
 
     def _setup_plot(self):
@@ -104,8 +106,6 @@ class FixedPointVisualizer:
         self.ax.grid(True, axis='x')
         self.ax.legend(loc='upper right')
         plt.draw()
-
-
 
     def _quantize_to_rule_values(self, input_array, rule_values):
         rule_arr = np.array(rule_values)[:, np.newaxis]  # shape (N, 1)

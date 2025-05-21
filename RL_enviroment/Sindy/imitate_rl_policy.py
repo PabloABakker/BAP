@@ -4,6 +4,7 @@ import pysindy as ps
 from pysindy.optimizers import STLSQ, SR3, ConstrainedSR3
 from sklearn.model_selection import train_test_split
 import dill as pickle
+from itertools import combinations
 from sklearn.linear_model import Lasso
 from pysindy.feature_library import FourierLibrary, PolynomialLibrary, GeneralizedLibrary,  CustomLibrary
 import json
@@ -17,10 +18,9 @@ from custom_libs import hardware_efficient_library, hardware_efficient_library_p
 
 # setup fixed point visualizer
 N_intiger_bits = 4
-N_fractional_bits = 7
+N_fractional_bits = 12
 
 fpv = FixedPointVisualizer(draw=False, int_bits=N_intiger_bits, frac_bits=N_fractional_bits)
-
 
 
 
@@ -33,45 +33,6 @@ def save_sindy_model(model, save_prefix="sindy_model"):
         json.dump(model.get_feature_names(), f)
     print(f"✅ SINDy model saved to '{save_prefix}_coefficients.npy' and '.json'")
 
-from itertools import combinations
-
-def fixed_point_quantize(input_values, int_bits, frac_bits):
-    """
-    Quantizes a numpy array (1D or 2D) to the closest values in the fixed-point set
-    based on ≤2-bit combinations.
-    
-    Parameters:
-    - input_values: numpy array of float values (1D or 2D).
-    - int_bits: number of integer bits.
-    - frac_bits: number of fractional bits.
-    
-    Returns:
-    - quantized array of the same shape as input_values.
-    """
-    total_bits = int_bits + frac_bits
-    positions = list(range(total_bits))
-
-    # Generate fixed-point values with ≤2 active bits
-    values = set()
-    values.add(0.0)  # Include zero
-
-    for k in range(1, 3):  # 1 or 2 bits set
-        for combo in combinations(positions, k):
-            value = 0
-            for pos in combo:
-                value += 2 ** (int_bits - pos - 1)
-            values.add(value)
-            values.add(-value)
-
-    fixed_values = sorted(values)
-
-    input_array = np.asarray(input_values)
-    fixed_arr = np.array(fixed_values)[:, np.newaxis]  # shape (N, 1)
-    abs_diff = np.abs(fixed_arr - input_array.ravel())  # shape (N, M)
-    closest_indices = np.argmin(abs_diff, axis=0)
-    
-    quantized = np.array(fixed_values)[closest_indices]
-    return quantized.reshape(input_array.shape)
 
 
 def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
@@ -120,7 +81,7 @@ def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
     constraint_lhs = np.eye(n_features * n_targets,n_features * n_targets)
 
     # Fit SINDy model
-    optimizer = STLSQ(threshold=0.5, alpha=0.8e0, fit_intercept=True)
+    # optimizer = STLSQ(threshold=0.35, alpha=0.4e0, fit_intercept=True)
     # optimizer = SR3(threshold=0.001, max_iter= 10_000, nu=1e2)
     # optimizer = ConstrainedSR3(constraint_rhs=constraint_rhs, 
     #                             constraint_lhs=constraint_lhs, 
@@ -135,29 +96,27 @@ def analyze_with_sindy(data_file="ppo_CartPole-v1_data.csv", dt=0.01):
     #                             thresholder="l1",
     #                             threshold=0.001,
     #                             max_iter=10000)
-    # optimizer = Lasso(alpha=0.0001, fit_intercept=True, max_iter=500)
+    optimizer = Lasso(alpha=0.0003, fit_intercept=True, max_iter=500)
     # optimizer = cust_opt.HWConstrainedSTLSQ(threshold=1e-5, alpha=1e10, quantizer=fpv)
 
     # Create SINDy model
-    model = ps.SINDy( optimizer = optimizer, feature_library=library)
+    model = ps.SINDy(optimizer=optimizer, feature_library=library)
     model.fit(X_train, t=t, x_dot=y_train)
-    print("\nLearned SINDy Policy:")
-    # model.print()
-    print(model.coefficients().shape, model.coefficients().dtype, model.coefficients())
-    fpv = FixedPointVisualizer(draw=True, init_int_bits=N_intiger_bits, init_frac_bits=N_fractional_bits, input_array=model.coefficients())
 
-    print("\n\n\n Model coeff np array:", np.array(model.coefficients()))
-    print("\n\n\n -----") 
-    Q_coeff  = fixed_point_quantize(np.array(model.coefficients()).astype(np.float64), int_bits=N_intiger_bits, frac_bits=N_fractional_bits)    
+    print("\nLearned SINDy Policy:")
+    model.print()
+
+    # quantize
+    model.coefficients()[:] = fpv.quantize(np.array(model.coefficients()).astype(np.float64))
+
+    # Print summary
+    print("\nQuantized SINDy Policy:")
+    model.print()
+   
     
     # Save model
     with open("sindy_policy.pkl", "wb") as f:
         pickle.dump(model, f)
-
-    # Print summary
-    print("\nQuantized SINDy Policy:")
-    # model.print()
-    print(Q_coeff.shape, Q_coeff.dtype, Q_coeff)
 
     # Evaluation
     y_pred = model.predict(X_test)

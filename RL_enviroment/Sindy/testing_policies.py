@@ -166,6 +166,7 @@ def compare_from_random_inits(env_id="Pendulum-v1", rl_algo="ppo", dt=0.05, rend
     print(f"Average SINDy reward over {n_trials} trials: {np.mean(all_sindy_rewards):.2f}")
 
     print(f"\nFinal symbolic model from SINDy:")
+    # print(sindy_model.coefficients()
     sindy_model.print()
 
 
