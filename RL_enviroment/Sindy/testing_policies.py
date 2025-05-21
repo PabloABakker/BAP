@@ -14,13 +14,14 @@ import dill as pickle
 # --- Add path to custom environment module ---
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 import CustomDynamicsEnv_v2  # This must register the custom env
+import testing_env.old_env as old_env
 
 # --- Load correct SINDy model based on env ---
 def load_sindy_model(env_id):
     script_dir = Path(__file__).parent.parent.absolute()
     model_paths = {
-        "CustomDynamicsEnv-v2": script_dir / "Sindy_best_found_policies" / "FlappingWing-v0" / "sindy_policy.pkl",
-        "Pendulum-v1": script_dir / "Sindy_best_found_policies" / "Pendulum" / "sindy_policy_pendulum_80_params_6th_order_pol.pkl",
+        "testEnv-v2": script_dir / "Sindy_best_found_policies" / "FlappingWing" / "sindy_policy.pkl",
+        "Pendulum-v1": script_dir / "Sindy_best_found_policies" / "Pendulum" / "sindy_policy.pkl",
         "Acrobot-v1": script_dir / "Sindy_best_found_policies" / "Acrobot" / "sindy_policy_acrobot_fourier_lib4_plus_poly4_lasso.pkl",
         "CartPole-v1": script_dir / "Sindy_best_found_policies" / "Cartpole" / "sindy_policy_cartpole_15params_3rth_order_poly.pkl",
         "MountainCarContinuous-v0": script_dir / "Sindy_best_found_policies" / "Mountain car" / "sindy_policy_td3_mountaincarcontinuous_5_params_lasso.pkl",

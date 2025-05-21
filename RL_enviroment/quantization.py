@@ -1,11 +1,12 @@
 import matplotlib.pyplot as plt
-from itertools import combinations, product
+from itertools import product
 from matplotlib.widgets import Slider
 import numpy as np
 
 class FixedPointVisualizer:
-    def __init__(self, int_bits=None, frac_bits=None, draw=False, init_int_bits=3, init_frac_bits=3):
+    def __init__(self, int_bits=None, frac_bits=None, draw=False, init_int_bits=3, init_frac_bits=3, input_array=None):
         self.draw = draw
+        self.input_array = input_array
 
         if draw:
             self.init_int_bits = init_int_bits
@@ -16,36 +17,14 @@ class FixedPointVisualizer:
                 raise ValueError("You must provide int_bits and frac_bits if draw is False.")
             self.int_bits = int_bits
             self.frac_bits = frac_bits
-            self.fixed_values = self._get_fixed_point_values(int_bits, frac_bits)
-
-    def _get_fixed_point_values(self, int_bits, frac_bits):
-        total_bits = int_bits + frac_bits
-        positions = list(range(total_bits))
-
-        values = set()
-        # Include zero
-        values.add(0.0)
-        
-        # Positive values
-        for k in range(1, 3):  # 1 or 2 bits set
-            for combo in combinations(positions, k):
-                value = 0
-                for pos in combo:
-                    value += 2 ** (int_bits - pos - 1)
-                values.add(value)
-                values.add(-value)  # Add negative counterpart
-        
-        return sorted(values)
+            self.fixed_values = self._get_rule_based_values(int_bits, frac_bits)
 
     def _get_rule_based_values(self, int_bits, frac_bits):
         m_list = list(range(int_bits))
         n_list = list(range(frac_bits + 1))
         values = set()
-
-        # Include zero
         values.add(0.0)
         
-        # Positive values
         for m in m_list:
             values.add(2 ** m)
             values.add(-(2 ** m))
@@ -91,45 +70,65 @@ class FixedPointVisualizer:
         self._plot_all(int_bits, frac_bits)
 
     def _plot_all(self, int_bits, frac_bits):
-        fixed_values = self._get_fixed_point_values(int_bits, frac_bits)
         rule_values = self._get_rule_based_values(int_bits, frac_bits)
-
         self.ax.clear()
 
-        for v in fixed_values:
-            self.ax.plot([v, v], [0.05, 0.25], color='blue')
-        for v in rule_values:
-            self.ax.plot([v, v], [-0.25, -0.05], color='red')
+        # Helper: Determine if value is "special"
+        def is_special(value):
+            remainder = abs(value) % 1.0
+            return np.isclose(remainder, 0.25, atol=1e-6) or \
+                np.isclose(remainder, 0.5, atol=1e-6) or \
+                np.isclose(remainder, 0.75, atol=1e-6)
 
-        self.ax.set_title(f'Ticks: ≤2 bits (blue) and rule-based (red) — int={int_bits}, frac={frac_bits}')
+        # Plot red (or cyan) ticks
+        for v in rule_values:
+            color = 'cyan' if is_special(v) else 'red'
+            self.ax.plot([v, v], [-0.15, -0.05], color=color, linewidth=1)
+            if is_special(v):
+                self.ax.text(v, -0.17, f'{v:.2f}', ha='center', va='top', fontsize=7, rotation=90, color=color)
+
+        # Plot magenta lines from input to quantized
+        if self.input_array is not None:
+            input_flat = np.asarray(self.input_array).ravel()
+            quantized = self._quantize_to_rule_values(input_flat, rule_values)
+
+            # Plot original input points
+            self.ax.plot(input_flat, np.zeros_like(input_flat), 'mo', label='Input')
+
+            for x, q in zip(input_flat, quantized):
+                self.ax.plot([x, q], [0, -0.04], color='magenta', linestyle=(0, (3, 3)), linewidth=1)
+
+        self.ax.set_title(f'Rule-based Quantization — int={int_bits}, frac={frac_bits}')
         self.ax.set_xlabel('Value')
         self.ax.set_yticks([])
         self.ax.grid(True, axis='x')
+        self.ax.legend(loc='upper right')
         plt.draw()
 
+
+
+    def _quantize_to_rule_values(self, input_array, rule_values):
+        rule_arr = np.array(rule_values)[:, np.newaxis]  # shape (N, 1)
+        abs_diff = np.abs(rule_arr - input_array.ravel())  # shape (N, M)
+        closest_indices = np.argmin(abs_diff, axis=0)
+        quantized = np.array(rule_values)[closest_indices]
+        return quantized.reshape(input_array.shape)
+
     def quantize(self, input_values):
-        """Quantizes a numpy array (1D or 2D) to the closest values in the fixed-point set."""
         if self.draw:
             raise RuntimeError("Cannot quantize while in draw mode.")
         if not hasattr(self, 'fixed_values'):
-            self.fixed_values = self._get_fixed_point_values(self.int_bits, self.frac_bits)
+            self.fixed_values = self._get_rule_based_values(self.int_bits, self.frac_bits)
         
         input_array = np.asarray(input_values)
-        # Reshape fixed_values for broadcasting
-        fixed_arr = np.array(self.fixed_values)[:, np.newaxis]
-        # Find closest values using broadcasting
-        abs_diff = np.abs(fixed_arr - input_array.ravel())
+        rule_arr = np.array(self.fixed_values)[:, np.newaxis]
+        abs_diff = np.abs(rule_arr - input_array.ravel())
         closest_indices = np.argmin(abs_diff, axis=0)
         quantized = np.array(self.fixed_values)[closest_indices]
         return quantized.reshape(input_array.shape)
 
-# Example usage 1:
-# fpv = FixedPointVisualizer(int_bits=3, frac_bits=3, draw=False) 
-# random_array = np.random.rand(3, 4)-0.5  # Values between -0.5 and 0.5
-# quantized_values = fpv.quantize(random_array)
-# print("Original values:")
-# print(random_array)
-# print("Quantized values:")
-# print(quantized_values)
-# Example usage 2:
-# fpv = FixedPointVisualizer(draw=True, init_int_bits=3, init_frac_bits=3)
+# Example input array
+# input_array = np.random.rand(1, 100) - 0.5
+
+# # Launch visualization (only red ticks, lines from each point to quantized value)
+# fpv = FixedPointVisualizer(draw=True, init_int_bits=3, init_frac_bits=4, input_array=input_array)

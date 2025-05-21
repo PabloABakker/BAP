@@ -1,0 +1,59 @@
+#!/bin/bash
+
+###########################################
+### SLURM CONFIGURATION
+###########################################
+
+### Job name
+#SBATCH --job-name="amazing job"
+
+### runtime in hours/minutes/seconds
+#SBATCH -t 00:01:00
+
+### partition (memory, compute-p1, compute-p2, gpu-v100, gpu-a100)
+#SBATCH -p compute-p1
+
+### number of nodes
+#SBATCH --nodes=1
+
+### memory for the job. MAX value depend on the node type
+#SBATCH --mem=1G
+
+### To reserve a full node (i.e. all cores and RAM memory)
+###SBATCH --exclusive
+
+### output filename (if standard output is not redirected)
+#SBATCH --output=hello_world.out
+
+### Number of times the task must be run (done in parallel!)
+#SBATCH --ntasks-per-node=1
+
+### up to 48 threads for compute-p1 and 64 for compute-p2
+#SBATCH --cpus-per-task=1
+
+###########################################
+### LOAD MODULES
+###########################################
+
+### Required for python script execution
+module load 2023r1
+module load python
+
+### Example of other modules
+module load py-numpy
+module load py-pip
+module load py-matplotlib
+
+###########################################
+### INSTALL PACKAGE LOCALLY
+###########################################
+### Example
+pip3 install sympy
+
+###########################################
+### SUBMIT THE JOB TO SLURM
+###########################################
+###  > output.txt 2>&1 is used to redirct both standart output and standart error to file named output.txt
+srun python /home/nchauvaux/hello_world/hello_world.py > output.txt 2>&1
+
+echo "The script has been executed" >> output.txt

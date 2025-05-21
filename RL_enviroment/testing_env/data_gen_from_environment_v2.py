@@ -23,7 +23,7 @@ def generate_training_data(env, n_trajectories=50, steps_per_trajectory=200, noi
     """
     X = []
     U = []
-    dt = 0.002
+    dt = 0.001
     
     for _ in range(n_trajectories):
         # Reset environment

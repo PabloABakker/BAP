@@ -1,90 +1,81 @@
 import gymnasium as gym
 import numpy as np
-from gymnasium import spaces
 from scipy.integrate import solve_ivp
-import pygame
+from gymnasium import spaces
 
 class CustomDynamicsEnv(gym.Env):
-    metadata = {'render_modes': ['human'], 'render_fps': 30}
-
-    def __init__(self, render_mode=None):
-        super(CustomDynamicsEnv, self).__init__()
+    def __init__(self, render_mode=None, max_steps=8000):
+        super().__init__()
 
         self.render_mode = render_mode
 
-        # Physical constants
-        self.g = 9.8067  # gravity (m/s^2)
-        self.m = 0.0294  # mass (kg)
-        self.Iyy = 0.1   # moment of inertia (kg·m^2)
-        self.bx = 0.081  # damping coefficient in x-direction
-        self.bz = 0.0157 # damping coefficient in z-direction
-        self.c1 = 0.0114 # force coefficient 1
-        self.c2 = -0.0449 # force coefficient 2
-        self.lx = 0.0    # length in x-direction (m)
-        self.lz = 0.0271 # length in z-direction (m)
-        self.ly = 0.081  # length in y-direction (m)
-        self.f = 16.584013596491230  # fixed frequency (Hz)
+        self.max_steps = max_steps
 
-        # Reference values
-        self.ref = np.array([0.0, 0.0, 0.0, 0.0], dtype=np.float64)  # [u_ref, w_ref, theta_ref, theta_dot_ref]
+        # Action: lateral deflection ld
+        self.action_space = spaces.Box(low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64)
 
-        # State: [u, w, theta, theta_dot]
-        self.state_dim = 4
-        self.observation_space = spaces.Box(
-            low=np.array([-np.inf, -np.inf, -np.inf, -np.inf]),
-            high=np.array([np.inf, np.inf, np.inf, np.inf]), 
-            shape=(self.state_dim,), dtype=np.float64
-        )
+        # Observation: [u, w, theta, theta_dot]
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
 
-        # Action: [ld]
-        self.action_dim = 1
-        self.action_space = spaces.Box(
-            low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64
-        )
-        
-        # Time step for integration
-        self.dt = 0.001  
-        self.max_steps = 4000
+        # Reference state: track theta and theta_dot
+        self.ref = np.array([0.0, 0.0, 0.0, 0.0])
+
+        self.ld_prev = 0.0
+        self.episode = 0
+        self.stable_counter = 0
+        self.state = np.zeros(4)
         self.current_step = 0
 
-        # Initialize state and ld
-        self.ld_prev = 0.0
-        self.state = None
+        # Physical constants
+        self.g = 9.8067
+        self.m = 0.0294
+        self.Iyy = 0.1
+        self.bx = 0.081
+        self.bz = 0.0157
+        self.c1 = 0.0114
+        self.c2 = -0.0449
+        self.lx = 0.0
+        self.lz = 0.0271
+        self.ly = 0.081
+        self.f = 16.584
+        self.dt = 0.001
 
-        # Stability tracking
-        self.stable_counter = 0
-        self.stable_required = 10  # Steps that the agent must remain stable
-        self.stability_threshold_rad = 0.005  # rad
-        self.stability_threshold_radps = 0.05  # rad/s
+        # Default reward shaping parameters (will be updated)
+        self.stability_threshold_rad = 0.05
+        self.stability_threshold_radps = 0.5
+        self.stable_required = 5
+        self.stability_bonus = 50
+        self.instability_penalty = 5
 
+        self.last_reward_components = {}
 
-        self.reset()
+    def set_episode_number(self, episode):
+        self.episode = episode
+        max_episodes = 1000  # adjust based on your training
 
+        progress = min(episode / max_episodes, 1.0)
 
-    def _full_dynamics(self, t, y, action):
-        """
-        Combined dynamics for all state variables.
-        y = [u, w, theta, theta_dot]
-        action = [ld]
-        Returns [u_dot, w_dot, theta_dot, theta_ddot]
-        """
+        # Progressive shaping (easy → hard)
+        self.stability_threshold_rad = 0.05 * (1 - progress) + 0.005 * progress
+        self.stability_threshold_radps = 0.5 * (1 - progress) + 0.05 * progress
+        self.stable_required = int(5 * (1 - progress) + 10 * progress)
+
+        self.stability_bonus = 50 + 250 * progress
+        self.instability_penalty = 5 + 15 * progress
+
+    def _dynamics(self, t, y, ld):
         u, w, theta, theta_dot = y
-        ld = np.clip(action[0], self.action_space.low[0], self.action_space.high[0])
-        
-        # Calculate ld_dot using finite difference
+
         ld_dot = (ld - self.ld_prev) / self.dt if t > 0 else 0
-        
-        # u_dot equation
+
         u_dot = (-np.sin(theta)*self.g - 2*self.bx*u/self.m + 
-                self.lz*theta_dot*2*self.bx/self.m + 
-                2*self.bx*ld_dot/self.m - theta_dot*w)
-        
-        # w_dot equation
+                 self.lz*theta_dot*2*self.bx/self.m + 
+                 2*self.bx*ld_dot/self.m - theta_dot*w)
+
         w_dot = (np.cos(theta)*self.g - 2*(self.c1*self.f+self.c2)/self.m - 
-                2*self.bz*w/self.m - 2*self.bz*(self.lx + ld)*theta_dot/self.m + 
-                theta_dot*u)
-        
-        # theta_ddot equation
+                 2*self.bz*w/self.m - 2*self.bz*(self.lx + ld)*theta_dot/self.m + 
+                 theta_dot*u)
+
         theta_ddot = (
             2*self.bx*self.lz*u
             - 2*self.bx*self.lz**2 * theta_dot
@@ -94,143 +85,92 @@ class CustomDynamicsEnv(gym.Env):
             - 2*self.bz*w*(ld + self.lx)
             - 2*self.bz*(ld + self.lx)**2 * theta_dot
         ) / self.Iyy
-        
+
         return [u_dot, w_dot, theta_dot, theta_ddot]
-    
-    def reference(self, ref):
-        u_ref, w_ref, theta_ref, theta_dot_ref = ref[0], ref[1], ref[2], ref[3]
-        return u_ref, w_ref, theta_ref, theta_dot_ref
 
     def step(self, action):
-        # Get reference values
-        u_ref, w_ref, theta_ref, theta_dot_ref = self.reference(self.ref)
+        action = np.clip(action, self.action_space.low, self.action_space.high)
+        ld = float(action[0])
 
-        # Store current action for ld_dot calculation
-        current_action = np.clip(action, self.action_space.low, self.action_space.high)
-        
-        # Integrate all states together
-        sol = solve_ivp(
-            fun=lambda t, y: self._full_dynamics(t, y, current_action),
-            t_span=(0, self.dt),
-            y0=self.state,
-            method='RK45',
-            t_eval=[self.dt]
-        )
-        
-        # Update state
+        t_span = (0, self.dt)
+        y0 = self.state.copy()
+
+        sol = solve_ivp(self._dynamics, t_span, y0, args=(ld,), method='RK45')
         self.state = sol.y[:, -1]
-        self.ld_prev = current_action[0]
-        
-        # Store derivatives AFTER integration
-        self.u_dot, self.w_dot, _, self.theta_ddot = self._full_dynamics(
-            self.dt, self.state, current_action
-        )
-        self.theta_dot = self.state[3]  # theta_dot comes directly from state
-        
-        self.current_step += 1
-        
 
+        theta_error = self.state[2] - self.ref[2]
+        theta_dot_error = self.state[3] - self.ref[3]
 
-        # Calculate reward
-        reward = -np.sum((self.state[2]-theta_ref)**2 + 0.5*(self.state[3]-theta_dot_ref)**2)  # penalize  theta, theta_dot
-        
-        # Bonus for stability
-        theta_stable = abs(self.state[2]-theta_ref) < self.stability_threshold_rad
-        theta_dot_stable = abs(self.state[3]-theta_dot_ref) < self.stability_threshold_radps
+        # Base reward: weighted squared errors
+        reward = - (10 * theta_error**2 + 5 * theta_dot_error**2)
+
+        # Smooth control penalty
+        control_change = abs(ld - self.ld_prev)
+        reward -= 0.1 * control_change
+
+        # Stability check
+        theta_stable = abs(theta_error) < self.stability_threshold_rad
+        theta_dot_stable = abs(theta_dot_error) < self.stability_threshold_radps
 
         if theta_stable and theta_dot_stable:
             self.stable_counter += 1
         else:
             self.stable_counter = 0
 
-        # bonus reward
+        # Stability bonus
         if self.stable_counter >= self.stable_required:
-            reward += 50  
+            reward += self.stability_bonus
 
-        # Penalize oscillations or runaway values
-        if np.any(np.abs(self.state-self.ref) > 5):
-            reward -= 5
-
-        # Termination conditions
-        if self.current_step >= self.max_steps:
+        # Instability penalty and early termination
+        if np.any(np.abs(self.state - self.ref) > 5):
+            reward -= self.instability_penalty
             terminated = True
-        elif self.stable_counter >= self.stable_required:
+        elif self.current_step >= self.max_steps:
             terminated = True
         else:
             terminated = False
-            
+
+        # Store debug info
+        self.last_reward_components = {
+            "theta_error_sq": theta_error**2,
+            "theta_dot_error_sq": theta_dot_error**2,
+            "control_change": control_change,
+            "stability_bonus": self.stability_bonus if self.stable_counter >= self.stable_required else 0,
+            "instability_penalty": self.instability_penalty if terminated and np.any(np.abs(self.state - self.ref) > 5) else 0,
+            "total_reward": reward,
+        }
+
+        self.ld_prev = ld
+        self.current_step += 1
+
         return self.state.copy(), reward, terminated, False, {}
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
         self.seed(seed)
-        rng = np.random.default_rng(seed)  # Create a seed-specific generator
+        rng = np.random.default_rng(seed)
 
-         # Sample random initial state using local RNG
+        # Random initial state
         low = np.array([-1.0, -1.0, -1.0, -1.0])
         high = np.array([1.0, 1.0, 1.0, 1.0])
         self.state = rng.uniform(low, high)
-        # Reset state
-        # self.state = np.array([1.00, 1.00, 1, 0.1], dtype=np.float64)  # small initial theta (0.1 rad ~ 5.7°)
+
         self.current_step = 0
         self.ld_prev = 0.0
+        self.stable_counter = 0
 
-        # Reset derivatives
-        self.u_dot = 0.0
-        self.w_dot = 0.0
-        self.theta_dot = 0.0
-        self.theta_ddot = 0.0
+        # Set reward shaping based on episode number
+        self.set_episode_number(self.episode)
+
         return self.state.copy(), {}
-    
 
-    def render(self, mode='human'):
-        if mode != 'human':
-            return
-        
-        # Set background
-        self.screen.fill((255, 255, 255))  # White background
-        
-        # Update the position based on the drone's velocity
-        self.x_pos += self.state[0]  # Update x position based on u (horizontal velocity)
-        self.y_pos += self.state[1]  # Update y position based on w (vertical velocity)
-
-        # Simulate the drone flapping (use theta to show rotation)
-        self.angle = self.state[2]  # Angle for the drone's rotation
-        
-        # Draw the drone
-        # For simplicity, the drone is a rectangle with rotation
-        drone_surface = pygame.Surface((self.drone_width, self.drone_height))
-        drone_surface.fill((0, 0, 255))  # Blue color for the drone
-        rotated_drone = pygame.transform.rotate(drone_surface, np.degrees(self.angle))  # Rotate by theta
-        rotated_rect = rotated_drone.get_rect(center=(self.x_pos, self.y_pos))
-        
-        # Draw the drone on the screen
-        self.screen.blit(rotated_drone, rotated_rect.topleft)
-        
-        # Render the current step and state info
-        font = pygame.font.SysFont('Arial', 18)
-        text = font.render(f"Step: {self.current_step}, u: {self.state[0]:.2f}, w: {self.state[1]:.2f}, "
-                           f"θ: {np.degrees(self.state[2]):.2f}, θ̇: {self.state[3]:.2f}", True, (0, 0, 0))
-        self.screen.blit(text, (10, 10))
-        
-        # Update the display
-        pygame.display.flip()
-        
-        # Delay to create a frame rate (e.g., 30 FPS)
-        self.clock.tick(30)
-
-    def close(self):
-        pass
-
-    def seed(self, seed=None):
-        self.np_random, seed = gym.utils.seeding.np_random(seed)
-        return [seed]
+    def render(self):
+        print(f"Step {self.current_step}: State {self.state}, Reward components: {self.last_reward_components}")
 
 from gymnasium.envs.registration import register
 
 register(
     id="CustomDynamicsEnv-v2",
     entry_point="CustomDynamicsEnv_v2:CustomDynamicsEnv",
-    max_episode_steps=4000  
+    max_episode_steps=8000  
 )
-

@@ -17,6 +17,7 @@ class HWConstrainedSR3(ConstrainedSR3):
         max_iter=10000,
         tol=1e-6,
         nu=1.0,
+        quantizer=None,
         feature_weights=None, # shape (n_features,) with every entry correspomnding to a weight given to the feature and how heavily it impacts the hardware
     ):
         super().__init__(
@@ -30,6 +31,7 @@ class HWConstrainedSR3(ConstrainedSR3):
         )
         self.tol = tol
         self.feature_weights = None if feature_weights is None else np.asarray(feature_weights)
+        self.quantizer = quantizer
 
     def _fit(self, x, y):
         n_samples, n_features = x.shape
@@ -90,6 +92,7 @@ class HWConstrainedSR3(ConstrainedSR3):
             Xi = unpack(res.x)
 
             Z = self._threshold(Xi, self.threshold)
+            Z = self.squantizer.quantize(Z)
 
             if np.linalg.norm(Xi - Xi_old) < self.tol:
                 break
