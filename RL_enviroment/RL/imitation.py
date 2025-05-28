@@ -10,7 +10,7 @@ import sys
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import CustomDynamicsEnv_v2  # This runs the registration
-import testing_env.old_env as old_env  # This is the custom environment
+import testing_env.old_scripts.old_env as old_env  # This is the custom environment
 
 def collect_data(env_id="CustomDynamicsEnv-v2", num_episodes=10, algo="sac"):
     """

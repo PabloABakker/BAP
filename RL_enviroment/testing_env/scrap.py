@@ -1,4 +1,5 @@
 import numpy as np
+import gymnasium
 import pysindy as ps
 from pysindy.feature_library import CustomLibrary
 from pysindy.optimizers import STLSQ, ConstrainedSR3
@@ -10,17 +11,66 @@ import matplotlib.pyplot as plt
 from sklearn.metrics import mean_squared_error
 import os
 import sys
+import re
+
+import warnings
+warnings.filterwarnings("ignore")
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 import CustomDynamicsEnv_v2  # This runs the registration
 from quantization import FixedPointVisualizer
+from custom_libs import hardware_efficient_library
+from testing_env.hyper_param_tuner.hyper_par_tuner import PSO, Particles
 
-# setup fixed point visualizer
-N_intiger_bits = 5
-N_fractional_bits = 4
+def equations_from_Xi_Theta(Xi, Theta_feature_names, var_names="xyzuvw"):
+    """
+    Reconstructs symbolic strings from SINDy coefficient matrix and library names.
+    - Wraps terms in parentheses
+    - Moves minus signs outside for clean formatting
+    - Omits '* 1' for constant terms
+    """
+    num_eqs = Xi.shape[1]
+    var_mapping = {f"x{i}": var_names[i] for i in range(num_eqs)}
+    
+    equations = []
+    for eq_idx in range(num_eqs):
+        terms = []
+        for i, coeff in enumerate(Xi[:, eq_idx]):
+            if np.abs(coeff) > 1e-10:
+                raw_term = Theta_feature_names[i]
+                fixed_term = " * ".join(raw_term.split())
 
-fpv = FixedPointVisualizer(draw=False, int_bits=N_intiger_bits, frac_bits=N_fractional_bits)
+                # Replace x0 → x, etc.
+                for old, new in var_mapping.items():
+                    fixed_term = re.sub(rf'\b{old}\b', new, fixed_term)
+
+                # Handle constant term (i.e., just "1")
+                if fixed_term.strip() == "1":
+                    if coeff < 0:
+                        term = f"- ({abs(coeff):.3f})"
+                    else:
+                        term = f"({coeff:.3f})"
+                else:
+                    if coeff < 0:
+                        term = f"- ({abs(coeff):.3f} * {fixed_term})"
+                    else:
+                        term = f"({coeff:.3f} * {fixed_term})"
+                
+                terms.append(term)
+
+        # Combine terms properly
+        equation_str = terms[0]
+        for term in terms[1:]:
+            if term.startswith("-"):
+                equation_str += f" {term}"
+            else:
+                equation_str += f" + {term}"
+
+        equations.append(equation_str.replace("* + *"," + ").replace("* - *", " - "))
+    return equations
+
+
 
 # 1. Lorenz system
 def lorenz(t, state, sigma=10.0, rho=28.0, beta=8/3):
@@ -38,277 +88,86 @@ initial_state = [1.0, 1.0, 1.0]
 sol = solve_ivp(lorenz, t_span, initial_state, t_eval=t_eval)
 x = sol.y.T  # (n_samples, 3)
 
-vars = ['x', 'y', 'z']
-
-# 2. Custom feature library with hardcoded functions
-def hardware_efficient_library(var_names=("x", "y", "z")):
-    functions = [
-        # Constant
-        lambda x, y, z: 1.0,
-
-        # Linear
-        lambda x, y, z: x,
-        lambda x, y, z: y,
-        lambda x, y, z: z,
-
-        # Quadratic
-        lambda x, y, z: x**2,
-        lambda x, y, z: y**2,
-        lambda x, y, z: z**2,
-
-        # Interaction terms
-        lambda x, y, z: x*y,
-        lambda x, y, z: x*z,
-        lambda x, y, z: y*z,
-
-        # A + B*C combinations (non-redundant)
-        lambda x, y, z: x + y*z,
-        lambda x, y, z: y + x*z,
-        lambda x, y, z: z + x*y,
-
-        # (A + B)*C combinations (non-redundant)
-        lambda x, y, z: (x + y)*z,
-        lambda x, y, z: (x + z)*y,
-        lambda x, y, z: (y + z)*x,
-
-        # (A + B)*C + D combinations (non-redundant)
-        lambda x, y, z: (x + y)*z + x,
-        lambda x, y, z: (x + z)*y + z,
-        lambda x, y, z: (y + z)*x + z,
-
-        # ((A + B)^2) + C combinations (non-redundant)
-        lambda x, y, z: ((y + z)**2) + x,
-        lambda x, y, z: ((z + x)**2) + y,
-        lambda x, y, z: ((x + y)**2) + z,
-
-        # New composite squared terms
-        lambda x, y, z: (x + y*z)**2,
-        lambda x, y, z: (y + x*z)**2,
-        lambda x, y, z: (z + x*y)**2,
-
-        lambda x, y, z: ((x + y)*z)**2,
-        lambda x, y, z: ((x + z)*y)**2,
-        lambda x, y, z: ((y + z)*x)**2,
-
-        lambda x, y, z: ((x + y)*z + x)**2,
-        lambda x, y, z: ((x + z)*y + z)**2,
-        lambda x, y, z: ((y + z)*x + z)**2,
-
-        # Composite squared + variable
-        lambda x, y, z: (x + y*z)**2 + x,
-        lambda x, y, z: (y + x*z)**2 + y,
-        lambda x, y, z: (z + x*y)**2 + z,
-
-        lambda x, y, z: ((x + y)*z)**2 + x,
-        lambda x, y, z: ((x + z)*y)**2 + y,
-        lambda x, y, z: ((y + z)*x)**2 + z,
-
-        lambda x, y, z: ((x + y)*z + x)**2 + x,
-        lambda x, y, z: ((x + z)*y + z)**2 + y,
-        lambda x, y, z: ((y + z)*x + z)**2 + z
-    ]
-
-    function_names = [
-        lambda x, y, z: "1",
-        lambda x, y, z: "x",
-        lambda x, y, z: "y",
-        lambda x, y, z: "z",
-        lambda x, y, z: "x**2",
-        lambda x, y, z: "y**2",
-        lambda x, y, z: "z**2",
-        lambda x, y, z: "x*y",
-        lambda x, y, z: "x*z",
-        lambda x, y, z: "y*z",
-        lambda x, y, z: "x + y*z",
-        lambda x, y, z: "y + x*z",
-        lambda x, y, z: "z + x*y",
-        lambda x, y, z: "(x + y)*z",
-        lambda x, y, z: "(x + z)*y",
-        lambda x, y, z: "(y + z)*x",
-        lambda x, y, z: "(x + y)*z + x",
-        lambda x, y, z: "(x + z)*y + z",
-        lambda x, y, z: "(y + z)*x + z",
-        lambda x, y, z: "((y + z)**2) + x",
-        lambda x, y, z: "((z + x)**2) + y",
-        lambda x, y, z: "((x + y)**2) + z",
-        lambda x, y, z: "(x + y*z)**2",
-        lambda x, y, z: "(y + x*z)**2",
-        lambda x, y, z: "(z + x*y)**2",
-        lambda x, y, z: "((x + y)*z)**2",
-        lambda x, y, z: "((x + z)*y)**2",
-        lambda x, y, z: "((y + z)*x)**2",
-        lambda x, y, z: "((x + y)*z + x)**2",
-        lambda x, y, z: "((x + z)*y + z)**2",
-        lambda x, y, z: "((y + z)*x + z)**2",
-        lambda x, y, z: "(x + y*z)**2 + x",
-        lambda x, y, z: "(y + x*z)**2 + y",
-        lambda x, y, z: "(z + x*y)**2 + z",
-        lambda x, y, z: "((x + y)*z)**2 + x",
-        lambda x, y, z: "((x + z)*y)**2 + y",
-        lambda x, y, z: "((y + z)*x)**2 + z",
-        lambda x, y, z: "((x + y)*z + x)**2 + x",
-        lambda x, y, z: "((x + z)*y + z)**2 + y",
-        lambda x, y, z: "((y + z)*x + z)**2 + z"
-    ]
-
-    return CustomLibrary(
-        library_functions=functions,
-        function_names=function_names
-    )
-
-
-# 5) Optional: A small wrapper around ConstrainedSR3 to allow feature-weights
-class HWConstrainedSR3(ConstrainedSR3):
-    def __init__(self, *args, feature_weights=None, tol=1e-6, **kwargs):
-        super().__init__(*args, **kwargs)
-        self.tol = tol
-        self.feature_weights = None if feature_weights is None else np.asarray(feature_weights)
-
-    def _fit(self, x, y):
-        n_samples, n_features = x.shape
-        n_targets = y.shape[1]
-        Xi = np.zeros((n_features, n_targets))
-        Z  = Xi.copy()
-
-        # build weight matrix W
-        if self.feature_weights is not None:
-            W = np.repeat(self.feature_weights[:, None], n_targets, axis=1)
-        else:
-            W = np.zeros((n_features, n_targets))
-
-        def pack(mat):
-            return mat.flatten()
-        def unpack(vec):
-            return vec.reshape(n_features, n_targets)
-
-        for itr in range(self.max_iter):
-            Xi_old = Xi.copy()
-
-            def objective(xi_flat):
-                Xi_mat = unpack(xi_flat)
-                fit    = 0.5 * np.linalg.norm(y - x @ Xi_mat)**2
-                sr3    = 0.5 * self.nu * np.linalg.norm(Xi_mat - Z)**2
-                ridge  = 0.5 * np.sum(W * (Xi_mat**2))
-                return fit + sr3 + ridge
-
-            def jac(xi_flat):
-                Xi_mat     = unpack(xi_flat)
-                grad_fit   = -x.T @ (y - x @ Xi_mat)
-                grad_sr3   = self.nu * (Xi_mat - Z)
-                grad_ridge = W * Xi_mat
-                return pack(grad_fit + grad_sr3 + grad_ridge)
-
-            cons = []
-            if self.constraint_lhs is not None:
-                kind = "ineq" if self.inequality_constraints else "eq"
-                cons.append({
-                    "type": kind,
-                    "fun": lambda v: (self.constraint_rhs - self.constraint_lhs @ v)
-                             if self.inequality_constraints
-                             else (self.constraint_lhs @ v - self.constraint_rhs)
-                })
-
-            res = optimize.minimize(
-                fun=objective,
-                x0=pack(Xi),
-                jac=jac,
-                constraints=cons,
-                method="SLSQP",
-                options={"maxiter": 200, "ftol": 1e-12}
-            )
-            Xi = unpack(res.x)
-
-            Z  = self._threshold(Xi, self.threshold)
-
-            if np.linalg.norm(Xi - Xi_old) < self.tol:
-                break
-
-        return Xi
-
-STLSQ()
-class HWConstrainedSTLSQ(STLSQ):
-    def __init__(self, alpha=0.1, threshold=0.1, max_iter=20, feature_weights=None, **kwargs):
-        super().__init__(alpha=alpha, threshold=threshold, max_iter=max_iter, **kwargs)
-        self.feature_weights = None if feature_weights is None else np.asarray(feature_weights)
-
-    def _reduce(self, x, y):
-        n_samples, n_features = x.shape
-        n_targets = y.shape[1]
-        Xi = np.zeros((n_features, n_targets))
-
-        # Precompute x^T x and x^T y for ridge solution
-        XtX = x.T @ x
-        Xty = x.T @ y
-
-        if self.feature_weights is not None:
-            W = np.repeat(self.feature_weights[:, None], n_targets, axis=1)
-        else:
-            W = np.zeros((n_features, n_targets))
-
-        for itr in range(self.max_iter):
-            Xi_old = Xi.copy()
-
-            # Ridge regression with custom feature weighting
-            for k in range(n_targets):
-                ridge = self.alpha + W[:, k]  # effective regularization per feature
-                Xi[:, k] = np.linalg.solve(XtX + np.diag(ridge), Xty[:, k])
-
-            # Apply thresholding
-            small_inds = np.abs(Xi) < self.threshold
-            Xi[small_inds] = 0
-
-            # Optional: Custom coefficient adjustment step
-            # For example: zero out specific indices, or normalize
-            # Example (dummy logic):
-            # Xi[0, :] = 0  # force zeroing of first feature if needed
-            # Xi = np.clip(Xi, -1, 1)
-            # print(np.array(Xi))
-            Xi = fpv.quantize(Xi)
-            # print(Xi)
-            # Convergence check
-            if np.linalg.norm(Xi - Xi_old) < 1e-6:
-                break
-
-        return Xi
-
-# 6) Assemble everything & fit SINDy
-lib = hardware_efficient_library(var_names=("x","y","z"))
-lib = ps.PolynomialLibrary()
+# 2. Create library
+lib = ps.PolynomialLibrary(degree=2)
+lib = hardware_efficient_library()
 lib.fit(x)
-n_feat = lib.n_output_features_
-n_targ = x.shape[1]
 
-rhs = np.full(n_feat * n_targ, 100.0)
-lhs = np.eye(n_feat * n_targ)
+# 3) create function to optimize
+opt = STLSQ()
 
-# opt = HWConstrainedSR3(
-#     constraint_rhs=rhs,
-#     constraint_lhs=lhs,
-#     inequality_constraints=True,
-#     thresholder="l1",
-#     max_iter=100000,
-#     feature_weights=None
-# )
+def tune(particle):
+    optimizer = STLSQ(threshold=particle[0], alpha=particle[1])
+    model = ps.SINDy(feature_library=lib, optimizer=optimizer)
+    model.fit(x, t=dt)
+    X_sindy = model.simulate(x[0], t_eval)
+    mse = mean_squared_error(x, X_sindy)
+    return mse
 
-# opt = ConstrainedSR3(
-#     constraint_rhs=rhs,
-#     constraint_lhs=lhs,
-#     inequality_constraints=True,
-#     thresholder="l1",
-#     max_iter=50000
-# )
+# define hyper-parameters
+N = 10
+grid_space =  np.array([[1e-3, 1], [1e-6, 1e-1]])
+momenta = (0.4, 0.9)
+cognitive_constant = 0.5
+social_constant = 0.5
+maximum_iterations = 1
 
-opt = HWConstrainedSTLSQ(threshold=0.01, alpha=0.01)
-model = ps.SINDy(feature_library=lib, optimizer=opt)
+##  PSO
+# pso = PSO(tune, N, grid_space, momenta, cognitive_constant, social_constant, maximum_iterations)
+# pso.optimize()
+# pso.animate()
+# best_location = pso.get_best_location()
+# print(f'best location: {best_location}')
 
-model.fit(x, t=dt)
-model.print()
-model.coefficients()[:]  = fpv.quantize(model.coefficients())
-print("\nLearned SINDy model:")
-model.print()
+# Fit best model
+# best_threshold, best_alpha = best_location
+# best_optimizer = STLSQ(threshold=best_threshold, alpha=best_alpha)
+# model = ps.SINDy(feature_library=lib, optimizer=best_optimizer)
+# model.fit(x, t=dt)
+# print("\nLearned SINDy model:")
+# model.print()
+# X_sindy = model.simulate(x[0], t_eval)
+
+## GRIDSEARCH
+# Same setup
+threshold_range = np.logspace(-3, 3, 1)  # 10 values from 1e-3 to 1e3
+alpha_range = np.logspace(-3, 3, 1)      # 10 values from 1e-3 to 1e3
+
+grid_results = []
+best_mse = np.inf
+best_params = None
+best_model = None
+
+for threshold in threshold_range:
+    for alpha in alpha_range:
+        optimizer = ps.STLSQ(threshold=threshold, alpha=alpha)
+        model = ps.SINDy(feature_library=lib, optimizer=optimizer)
+
+        try:
+            model.fit(x, t=dt)
+            X_sindy = model.simulate(x[0], t_eval)
+            mse = mean_squared_error(x, X_sindy)
+        except Exception as e:
+            mse = np.inf  # Treat failed fits as bad models
+
+        grid_results.append(((threshold, alpha), mse))
+
+        if mse < best_mse:
+            best_mse = mse
+            best_params = (threshold, alpha)
+            best_model = model
+
+print(f"Best params from grid search: threshold={best_params[0]:.3e}, alpha={best_params[1]:.3e}")
+print(f"Best MSE: {best_mse:.6e}")
+
+
+equations = equations_from_Xi_Theta(model.coefficients().T, model.get_feature_names())
+print("SINDy equations:")
+print(equations)
+
+
 
 # 7) Simulate & plot
-X_sindy = model.simulate(x[0], t_eval)
 labels = ["x", "y", "z"]
 plt.figure(figsize=(12, 4))
 for i in range(3):

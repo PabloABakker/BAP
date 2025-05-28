@@ -1,0 +1,10 @@
+env_id,trial,variant,mean_reward,mse,n_steps
+Pendulum-v1,1,RL,-0.2741717746821373,nan,200
+Pendulum-v1,1,poly_regular_STLSQ,-1.5405775578719962,0.0018401077,200
+Pendulum-v1,1,poly_regular_ConstrainedSR3,-1.0548434445847543,0.0012945306,200
+Pendulum-v1,1,poly_hardware_STLSQ,-1.5405775578719962,0.0018401077,200
+Pendulum-v1,1,poly_hardware_ConstrainedSR3,-1.054845102550182,0.0012945329,200
+Pendulum-v1,1,hw_regular_STLSQ,-0.5426627435620555,0.00025628036,200
+Pendulum-v1,1,hw_regular_ConstrainedSR3,-521.5796563429238,4.5732436,200
+Pendulum-v1,1,hw_hardware_STLSQ,-0.5426627435620555,0.00025628036,200
+Pendulum-v1,1,hw_hardware_ConstrainedSR3,-521.5796563429238,4.5732436,200

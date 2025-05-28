@@ -11,11 +11,6 @@ class CustomDynamicsEnv(gym.Env):
 
         self.max_steps = max_steps
 
-        # Action: lateral deflection ld
-        self.action_space = spaces.Box(low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64)
-
-        # Observation: [u, w, theta, theta_dot]
-        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
 
         # Reference state: track theta and theta_dot
         self.ref = np.array([0.0, 0.0, 0.0, 0.0])
@@ -40,6 +35,13 @@ class CustomDynamicsEnv(gym.Env):
         self.f = 16.584
         self.dt = 0.001
 
+
+        # Observation: [u, w, theta, theta_dot]
+        self.observation_space = spaces.Box(low=-np.inf, high=np.inf, shape=(4,), dtype=np.float32)
+        
+        # Action: lateral deflection ld
+        self.action_space = spaces.Box(low=np.array([-self.ly*np.sin(np.pi/10)]), high=np.array([self.ly*np.sin(np.pi/10)]), dtype=np.float64)
+
         # Default reward shaping parameters (will be updated)
         self.stability_threshold_rad = 0.05
         self.stability_threshold_radps = 0.5
@@ -53,7 +55,7 @@ class CustomDynamicsEnv(gym.Env):
         self.episode = episode
         max_episodes = 1000  # adjust based on your training
 
-        progress = min(episode / max_episodes, 1.0)
+        progress = episode / max_episodes
 
         # Progressive shaping (easy → hard)
         self.stability_threshold_rad = 0.05 * (1 - progress) + 0.005 * progress
@@ -68,23 +70,31 @@ class CustomDynamicsEnv(gym.Env):
 
         ld_dot = (ld - self.ld_prev) / self.dt if t > 0 else 0
 
-        u_dot = (-np.sin(theta)*self.g - 2*self.bx*u/self.m + 
-                 self.lz*theta_dot*2*self.bx/self.m + 
-                 2*self.bx*ld_dot/self.m - theta_dot*w)
+        ## Dynamics equations from matlab
+        # u_dot = (-np.sin(theta)*self.g - 2*self.bx*u/self.m + 
+        #          self.lz*theta_dot*2*self.bx/self.m + 
+        #          2*self.bx*ld_dot/self.m - theta_dot*w)
 
-        w_dot = (np.cos(theta)*self.g - 2*(self.c1*self.f+self.c2)/self.m - 
-                 2*self.bz*w/self.m - 2*self.bz*(self.lx + ld)*theta_dot/self.m + 
-                 theta_dot*u)
+        # w_dot = (np.cos(theta)*self.g - 2*(self.c1*self.f+self.c2)/self.m - 
+        #          2*self.bz*w/self.m - 2*self.bz*(self.lx + ld)*theta_dot/self.m + 
+        #          theta_dot*u)
 
-        theta_ddot = (
-            2*self.bx*self.lz*u
-            - 2*self.bx*self.lz**2 * theta_dot
-            - 2*self.bx*self.lz*ld_dot
-            - 2*self.c1*self.f*(ld + self.lx)
-            - 2*self.c2*(ld + self.lx)
-            - 2*self.bz*w*(ld + self.lx)
-            - 2*self.bz*(ld + self.lx)**2 * theta_dot
-        ) / self.Iyy
+        # theta_ddot = (
+        #     2*self.bx*self.lz*u
+        #     - 2*self.bx*self.lz**2 * theta_dot
+        #     - 2*self.bx*self.lz*ld_dot
+        #     - 2*self.c1*self.f*(ld + self.lx)
+        #     - 2*self.c2*(ld + self.lx)
+        #     - 2*self.bz*w*(ld + self.lx)
+        #     - 2*self.bz*(ld + self.lx)**2 * theta_dot
+        # ) / self.Iyy
+
+        ## Dynamics equations from paper
+        u_dot = -theta_dot * w - self.g * np.sin(theta) - self.bx * self.f * u / self.m + self.lz * theta_dot * self.f * self.bx / self.m - self.f * self.bx * ld_dot / self.m
+
+        w_dot = theta_dot * u + self.g * np.cos(theta) - (self.c1 * self.f + self.c2) / self.m - self.bz * self.f * w / self.m - self.bz *self.f * ld_dot * theta_dot / self.m
+
+        theta_ddot = (-self.bx * self.f * self.lz (u - self.lz * theta_dot + ld_dot) + self.bz * self.f * ld(w-ld*theta_dot) - (self.c1 * self.f + self.c2) * ld)/self.Iyy
 
         return [u_dot, w_dot, theta_dot, theta_ddot]
 
@@ -122,7 +132,7 @@ class CustomDynamicsEnv(gym.Env):
             reward += self.stability_bonus
 
         # Instability penalty and early termination
-        if np.any(np.abs(self.state - self.ref) > 5):
+        if np.any(np.abs(self.state - self.ref) > 10):
             reward -= self.instability_penalty
             terminated = True
         elif self.current_step >= self.max_steps:
@@ -166,6 +176,10 @@ class CustomDynamicsEnv(gym.Env):
 
     def render(self):
         print(f"Step {self.current_step}: State {self.state}, Reward components: {self.last_reward_components}")
+
+    def seed(self, seed=None):
+        self.np_random, seed = gym.utils.seeding.np_random(seed)
+        return [seed]
 
 from gymnasium.envs.registration import register
 
