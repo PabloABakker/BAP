@@ -148,18 +148,38 @@ def process_expression(expr, graph, node_id, parent_id=None, top_level=False, ex
     
     #  unary minus
     elif isinstance(expr, UnaryMinus):
-        curr_id = node_id
-        graph.add_node(curr_id, label="-", type="operation")
-        expr_to_id[expr_hash] = curr_id
+        # curr_id = node_id
+        # graph.add_node(curr_id, label="-", type="operation")
+        # expr_to_id[expr_hash] = curr_id
+        # node_id += 1
+        
+        # if parent_id is not None:
+        #     graph.add_edge(curr_id, parent_id)
+        
+        # # Process the term inside the unary minus
+        # node_id, term_id = process_expression(expr.value, graph, node_id, curr_id, top_level=False, expr_to_id=expr_to_id)
+        
+        # return node_id, curr_id
+
+        mult_node = node_id
+        graph.add_node(mult_node, label="*", type="operation")
+        expr_to_id[expr_hash] = mult_node
         node_id += 1
         
         if parent_id is not None:
-            graph.add_edge(curr_id, parent_id)
+            graph.add_edge(mult_node, parent_id)
+        
+        # Create -1 constant node
+        const_node = node_id
+        graph.add_node(const_node, label="-1", type="value")
+        node_id += 1
+        graph.add_edge(const_node, mult_node, label='left')
         
         # Process the term inside the unary minus
-        node_id, term_id = process_expression(expr.value, graph, node_id, curr_id, top_level=False, expr_to_id=expr_to_id)
+        node_id, term_id = process_expression(expr.value, graph, node_id, mult_node, top_level=False, expr_to_id=expr_to_id)
+        graph.add_edge(term_id, mult_node, label='right')
         
-        return node_id, curr_id
+        return node_id, mult_node
     
     #  subtraction
     elif isinstance(expr, Subtraction):
@@ -266,7 +286,12 @@ class GenerateTree:
 
         #print(pos)
         if display:
-            plt.figure(figsize=(10, 9))
+
+            # first_20_nodes = list(graph.nodes())[:20]
+
+            # # Create a subgraph with those nodes
+            # graph = graph.subgraph(first_20_nodes).copy()
+            plt.figure(figsize=(15, 12))
             
             #Divide up the nodes
             operation_nodes = [n for n in graph.nodes() if graph.nodes[n].get('type') == 'operation']
@@ -310,8 +335,9 @@ class GenerateTree:
             for text in graph_labels.values():
                 text.set_zorder(3)  # labels on top
 
+            #plt.title(f"Node Graph for: ${(polynomial_str.replace('**', '^')).replace('*', '')}$", fontsize=16)
 
-            plt.title(f"Node Graph for: ${(polynomial_str.replace('**', '^')).replace('*', '')}$", fontsize=16)
+            plt.title(f"Node Graph for", fontsize=16)
             plt.axis('off')
             plt.tight_layout()
             plt.show() 
@@ -519,6 +545,7 @@ class DSPSolver:
                             if operations[m] == '-' and m > 0:
                                 added = True
                                 edge = list(G.in_edges(path[m], data=True))
+                                # print(edge)
                                 if path[m-1] == edge[0][0] and path[m] == edge[0][1] and edge[0][2]['label'] == 'right':
                                     possible_combos.append(path)
 
@@ -788,6 +815,10 @@ def implement_bit_shifts(G):
             # If the left edge is not a number, then continue with the loop
             if not check_numeric(G.nodes[left_edge[0]].get('label', '')):
                 continue
+
+            # Skip multiplication nodes with -1 (unary minus representations)
+            if G.nodes[left_edge[0]].get('label', '') == '-1':
+                continue
             
             # print(node)
             val = G.nodes[left_edge[0]].get('label', '')
@@ -805,31 +836,33 @@ def implement_bit_shifts(G):
                 child_node = child_node[0][1]
             else:
                 child_node = []
+            # print("VAL TO CHECK LOG: ", val)
 
-            if math.log2(float(val)).is_integer():
+            if float(val) > 0:
+                if math.log2(float(val)).is_integer():
 
-               ####### CONTINUE PRROGRAMMING HERE TO HAVE ONLY ONE SHIFT NODE
-                # print("Value is power of 2: ", float(val))
-                # print("Log-ed answer: ", math.log2(float(val)))
-                # print(node, left_edge)
+                ####### CONTINUE PRROGRAMMING HERE TO HAVE ONLY ONE SHIFT NODE
+                    # print("Value is power of 2: ", float(val))
+                    # print("Log-ed answer: ", math.log2(float(val)))
+                    # print(node, left_edge)
 
 
-                shift_val = math.log2(float(val))
-                # print("parent node is: ", parent_node)
-                # print("child node is: ", child_node)
-                # print("Shift length: ", shift_val)
+                    shift_val = math.log2(float(val))
+                    # print("parent node is: ", parent_node)
+                    # print("child node is: ", child_node)
+                    # print("Shift length: ", shift_val)
 
-                single_bit_shift_nodes.append([shift_val, parent_node, child_node])
+                    single_bit_shift_nodes.append([shift_val, parent_node, child_node])
 
-            else:
-                best_combination, best_sum = closest_power_of_2(float(val))
+                else:
+                    best_combination, best_sum = closest_power_of_2(float(val))
 
-                # print( "Node to remove: ", left_edge[0])
-                
-                # print("Parent node is: ", parent_node)
-                # print("Child node is: ", child_node)
+                    # print( "Node to remove: ", left_edge[0])
+                    
+                    # print("Parent node is: ", parent_node)
+                    # print("Child node is: ", child_node)
 
-                bit_shift_nodes.append([best_combination, parent_node, child_node])
+                    bit_shift_nodes.append([best_combination, parent_node, child_node])
 
     ##Runs if it is a sum combination of bit shift nodes
     if single_bit_shift_nodes:
@@ -902,7 +935,7 @@ def implement_bit_shifts(G):
     for node in remove_vals:
         children = list(G.successors(node))
         children_operations = [G.nodes[s]['label'] for s in children]
-        if '+' in children_operations or '-' in children_operations:
+        if '+' in children_operations or '-' in children_operations or G.nodes[node]['label'] == '-1':
             remove_vals.remove(node)
 
     # print(remove_vals)
@@ -1013,7 +1046,6 @@ def postadder_last_node_in_dsp(G, node, dsp_combos):
     return False
 
 def add_postadder_shift_nodes(G, frac_bit_num, dsp_combos, adjusted_levels):
-    frac_bit_num = 10
     add_node_between = []
     for combo in dsp_combos:
         for node in combo:
@@ -1060,6 +1092,9 @@ def add_postadder_shift_nodes(G, frac_bit_num, dsp_combos, adjusted_levels):
         G.add_edge(node_num, edge[1], label = edge[2]['label'])
 
         node_num += 1
+
+    G = remove_0_bit_shifts(G)
+    
     return G, adjusted_levels
 
 
@@ -1258,54 +1293,6 @@ def split_into_dsp_stages(G, adjusted_levels, dsp_combos):
             while any(split_stage_levels.get(x) == split_stage_levels[next(iter(difference))] for x in frozen_nodes):
                 for item in descendants:
                     split_stage_levels[item] = split_stage_levels[item] + 1
-
-
-
-
-
-
-
-
-
-
-
-            # for j in difference:
-            #     print("On this level there are frozen node: ", any(split_stage_levels.get(x) == split_stage_levels[j] for x in frozen_nodes))
-            #     print("DSP is on this level: ", split_stage_levels[j])
-
-
-
-            #     # If node is on a level with frozen nodes then update node
-            #     while any(split_stage_levels.get(x) == split_stage_levels[j] for x in frozen_nodes):
-            #         split_stage_levels[j] = split_stage_levels[j] + 1
-            #         print("New level for node: ", split_stage_levels[j])
-            #         child = list(G.successors(j))
-            #         child = child[0]
-                    
-            #         print("Child has level: ", split_stage_levels[child])
-
-            #         if split_stage_levels[child] == split_stage_levels[j]:
-            #             print("Node and child need be moved down")
-            #             print(level_num)
-
-            #         # But also need to check all following nodes
-            #         # If child node has a level difference of 0, move all nodes of that level down by 1
-            #         # Needs to loop all the way to the bottom of the graph
-            #         following_node = j
-            #         while G.out_degree(following_node) != 0:
-                        
-            #             child = list(G.successors(following_node))
-            #             child = child[0]
-            #             print("Child being checked: ", child)
-            #             print("Child level: ", split_stage_levels[child])
-            #             if split_stage_levels[child] <= split_stage_levels[following_node]:
-            #                 print("Child and parent are on the same level")
-            #                 split_stage_levels[child] = split_stage_levels[following_node] + 1
-            #                 print("Node: ", child)
-            #                 print("New level: ", split_stage_levels[child])
-            #             following_node = child
-        
-            # frozen_nodes.update(difference)
         
         count += 1
         level_num += 1
@@ -1317,7 +1304,7 @@ def split_into_dsp_stages(G, adjusted_levels, dsp_combos):
 
 
 
-def isolate_shift_nodes(G, split_shift_levels):
+def isolate_shift_nodes(G, split_shift_levels, dsp_combos):
     divide_shift_levels = dict(split_shift_levels)
     shift_nodes = []
 
@@ -1426,24 +1413,6 @@ def isolate_shift_nodes(G, split_shift_levels):
     # Add last part so that if for level n, level n+1 is only shift nodes, all nodes below are moved up by 1
     # current_level = min(divide_shift_levels.values())
 
-    # while current_level <= max_level:
-    #     equal_level_nodes =  [k for k, v in divide_shift_levels.items() if v == current_level]
-    #     only_shift_nodes = all('<<' in G.nodes[node]['label'] or '>>' in G.nodes[node]['label'] for node in equal_level_nodes)
-
-    #     next_level_nodes =  [k for k, v in divide_shift_levels.items() if v == current_level + 1]
-    #     next_only_shift_nodes = all('<<' in G.nodes[node]['label'] or '>>' in G.nodes[node]['label'] for node in next_level_nodes)
-
-    #     if only_shift_nodes and next_only_shift_nodes:
-    #         nodes_below = [k for k, v in divide_shift_levels.items() if v > current_level]
-    #         print(nodes_below)
-
-    #         for j in nodes_below:
-    #             divide_shift_levels[j] = divide_shift_levels[j] - 1
-    #         print("YYES", current_level)
-
-    #     max_level = max(divide_shift_levels.values())
-    #     current_level += 1
-        
     return divide_shift_levels
 
 
@@ -1475,7 +1444,46 @@ def DSPBlockNumber(user_input):
     return len(dsp_combos)
 
 
+def GenerateGraph(user_input, frac_bit_num, show_graph):
 
+    poly = PolynomialParser(user_input)
+    G = nx.DiGraph()
+    node_id, root_id = process_expression(poly.expr_tree, G, 0)
+
+    # GenerateTree(G, user_input, display = False)
+
+    #G_mod = merge_negatives(G)
+    G_mod = implement_bit_shifts(G)
+    # GenerateTree(G_mod, user_input)
+
+    initial_levels = GenerateTree(G_mod, user_input, display = False).stage_levels(G_mod)
+
+
+    DSPSearch = DSPSolver(G_mod, initial_levels)
+    dsp_combos = DSPSearch.Solver
+    # print("Number of DSP Blocks: ", len(dsp_combos))
+
+    # # Displays tree and assigns pos to the variable
+
+    initial_levels = rearrange_dsps(G_mod, initial_levels, dsp_combos)
+
+    # GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = initial_levels)
+
+
+    
+    G_mod, adjusted_levels = add_postadder_shift_nodes(G_mod, frac_bit_num, dsp_combos, initial_levels)
+    GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = adjusted_levels, display = False)
+
+
+    G_mod, split_stage_levels = split_into_dsp_stages(G_mod, adjusted_levels, dsp_combos)
+  
+
+    split_shift_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
+    GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_shift_levels, display = show_graph)
+
+
+    return G_mod, dsp_combos, split_shift_levels
+    # print(dsp_combos)
 
 
 
