@@ -1046,54 +1046,59 @@ def postadder_last_node_in_dsp(G, node, dsp_combos):
     return False
 
 def add_postadder_shift_nodes(G, frac_bit_num, dsp_combos, adjusted_levels):
-    add_node_between = []
-    for combo in dsp_combos:
-        for node in combo:
-            if postadder_last_node_in_dsp(G, node, dsp_combos):
-                # print(combo, node)
 
-                edges_in = G.in_edges(node, data = True)
+    if frac_bit_num > 0:
+        add_node_between = []
+        for combo in dsp_combos:
+            for node in combo:
+                if postadder_last_node_in_dsp(G, node, dsp_combos):
+                    # print(combo, node)
 
-                for edge in edges_in:
-                    if edge[0] not in combo:
-                        add_node_between.append(edge)
-                
-    #print("here")
-    #print(add_node_between)
-    #print("Edges: ", add_node_between)
-    node_num = max(G.nodes()) + 1
-    for edge in add_node_between:
-        descendants = set()
-        # print(edge[1])
-        # result = [sublist for sublist in dsp_combos if any(adjusted_levels.get(x) == adjusted_levels[edge[1]] for x in sublist)]
+                    edges_in = G.in_edges(node, data = True)
 
-        # The shifted result is needed right after and so all nodes need to be moved one down
-        if abs(adjusted_levels[edge[0]] - adjusted_levels[edge[1]]) == 1:
-            # Find the DSP matches that are on the same level
-            dsp_matched = [sublist for sublist in dsp_combos if any(adjusted_levels.get(x) == adjusted_levels[edge[1]] for x in sublist)]
-            dsp_matched = [item for sublist in dsp_matched for item in sublist]
-            # print(dsp_matched)
-            # print("Shifted result is needed right after")
+                    for edge in edges_in:
+                        if edge[0] not in combo:
+                            add_node_between.append(edge)
+                    
+        #print("here")
+        print(add_node_between)
+        print("Edges: ", add_node_between)
+        node_num = max(G.nodes()) + 1
+        for edge in add_node_between:
+            descendants = set()
+            # print(edge[1])
+            # result = [sublist for sublist in dsp_combos if any(adjusted_levels.get(x) == adjusted_levels[edge[1]] for x in sublist)]
 
-            for t in dsp_matched:
-                descendants.update(nx.descendants(G, t) | {t})
-            # print(descendants)
+            # The shifted result is needed right after and so all nodes need to be moved one down
+            if abs(adjusted_levels[edge[0]] - adjusted_levels[edge[1]]) == 1:
+                # Find the DSP matches that are on the same level
+                dsp_matched = [sublist for sublist in dsp_combos if any(adjusted_levels.get(x) == adjusted_levels[edge[1]] for x in sublist)]
+                dsp_matched = [item for sublist in dsp_matched for item in sublist]
+                print(dsp_matched)
+                print("Shifted result is needed right after")
 
-            for w in descendants:
-                adjusted_levels[w] = adjusted_levels[w] + 1
+                for t in dsp_matched:
+                    descendants.update(nx.descendants(G, t) | {t})
+                print(descendants)
 
-        # print(adjusted_levels[edge[0]], adjusted_levels[edge[1]])
-        # print(edge)
-        G.remove_edge(edge[0], edge[1])
-        label = "<< " + str(frac_bit_num)
-        G.add_node(node_num, label= label, type="shift")
-        G.add_edge(edge[0], node_num)
+                # for w in descendants:
+                #     adjusted_levels[w] = adjusted_levels[w] + 1
 
-        G.add_edge(node_num, edge[1], label = edge[2]['label'])
+                for item, level in adjusted_levels.items():
+                    if level > adjusted_levels[dsp_matched[0]]:
+                        adjusted_levels[item] += 1
+                adjusted_levels[dsp_matched[0]] +=1
 
-        node_num += 1
+            # print(adjusted_levels[edge[0]], adjusted_levels[edge[1]])
+            # print(edge)
+            G.remove_edge(edge[0], edge[1])
+            label = "<< " + str(frac_bit_num)
+            G.add_node(node_num, label= label, type="shift")
+            G.add_edge(edge[0], node_num)
 
-    G = remove_0_bit_shifts(G)
+            G.add_edge(node_num, edge[1], label = edge[2]['label'])
+
+            node_num += 1
     
     return G, adjusted_levels
 
@@ -1172,13 +1177,35 @@ def rearrange_dsps(G, initial_levels, dsp_combos):
 
 
 
+def find_dsp_combos_in_levels(dsp_the_node_begins, split_stage_levels, dsp_combos):
+    # Get all levels occupied by the target DSP
+    dsp_levels = set(split_stage_levels[node] for node in dsp_the_node_begins)
+    
+    # Find DSP combos that have nodes in those levels
+    combos_in_levels = []
+    
+    for combo in dsp_combos:
+        # Skip the original DSP combo
+        if combo == dsp_the_node_begins:
+            continue
+            
+        # Check if any node in this combo is in the target levels
+        for node in combo:
+            if split_stage_levels[node] in dsp_levels:
+                if combo not in combos_in_levels:
+                    combos_in_levels.append(combo)
+                break  # Found one node, no need to check rest of combo
+    
+    return combos_in_levels
 
 # ### Splitting DSPs into stages
-
 
 def split_into_dsp_stages(G, adjusted_levels, dsp_combos):
 # Move DSP nodes in order to get DSPs to start at the same time
     split_stage_levels = dict(adjusted_levels)
+
+
+
     max_dsp_length = 0
 
     # all_nodes = []
@@ -1196,107 +1223,204 @@ def split_into_dsp_stages(G, adjusted_levels, dsp_combos):
     level_num = 1
 
     while level_num <= max(split_stage_levels.values()):
+        # while level_num <= max(split_stage_levels.values()):
         # print("MAX LEVEL: ", max(split_stage_levels.values()))
         # print("Sets are equal: ", set(G.nodes()) == frozen_nodes)
-
+    	
+        print("---------")
         nodes_at_this_level = [key for key, value in split_stage_levels.items() if value == level_num]
-        # print("Nodes at this level: ", nodes_at_this_level)
+        print("Nodes at this level: ", nodes_at_this_level)
         operation_set_this_level = {key for key in nodes_at_this_level if '<<' not in G.nodes[key]['label'] and '>>' not in G.nodes[key]['label']}
 
-        
+        non_first_dsp_nodes = []
+
+        first_term_dsp_combos = {sublist[0] for sublist in dsp_combos if sublist}
+
         for node in nodes_at_this_level:
             if ('<<' not in G.nodes[node]['label'] and '>>' not in G.nodes[node]['label']):
-                # print("---------")
-                # print("Node: ", node)
-                # print("Depth of: ", level_num)
-                # print("Level number: ", level_num)
+                
+                print("Node: ", node)
+                print("Depth of: ", level_num)
+                print("Level number: ", level_num)
 
-                matching_dsp_list = [sublist for sublist in dsp_combos if sublist and sublist[0] == node]
+                current_node = node
+                dsp_the_node_begins = [sublist for sublist in dsp_combos if sublist and sublist[0] == node]
                 
 
 
-                if matching_dsp_list:
-                    matching_dsp_list = matching_dsp_list[0]
-                    # print("DSP combo with this node as first: ", matching_dsp_list)
+                if dsp_the_node_begins:
+                    dsp_the_node_begins = dsp_the_node_begins[0]
+                    print("DSP combo with this node as first: ", dsp_the_node_begins)
 
                     
                     # Freeze nodes if all other nodes on that level are the first nodes in a dsp combo
-
-                    first_term_dsp_combos = {sublist[0] for sublist in dsp_combos if sublist}
-                    # print("First terms are: ", first_term_dsp_combos)
-                    # print("Operations on this level: ", operation_set_this_level)
-
-                    # All nodes in this level are the first nodes in a dsp combo
-                    all_present = operation_set_this_level.issubset(first_term_dsp_combos)
-                    # print("They are all present: ", all_present)
-
-                    # Also need to check that an out edge of one dsp combo does not point to the other dsp combo
-                    other_nodes = list(operation_set_this_level - {node})
-                    # print("Other nodes here: ", other_nodes ) 
-                    dsp_of_node = [sublist for sublist in dsp_combos if sublist[0] == node][0]
                     
-                    linked_to_same_level = False
-                    if other_nodes:
-                        for item in other_nodes:
-                            dsps_same_line = [sublist for sublist in dsp_combos if sublist[0] == item]
 
-                        # print("dsp same line: ", dsps_same_line)
+                    
+                    print("First terms of DSPs are: ", first_term_dsp_combos)
+                    print("Operations on this level: ", nodes_at_this_level, operation_set_this_level)
+
+                    
+                    
+                    #------------------
+
+                    # Need to check that all nodes coming into the DSP combo are in the levels above the first node
+                    
+                    
+                    other_nodes = list(operation_set_this_level - {node})
+                    print("Other nodes on this level: ", other_nodes ) 
+
+                    dependant_nodes = set() # Nodes that give info to this DSP
+                    for k in dsp_the_node_begins:
+                        for m in list(G.in_edges(k)):
+                            print(m, m[0])
+                            if G.nodes[m[0]]['type'] != 'shift':
+                                if m[0] not in dsp_the_node_begins:
+                                    dependant_nodes.add(m[0])
+                            else: ## Do this because shift node should be ignored
+                                parent_edges = list(G.in_edges(m[0]))
+                                for b in parent_edges:
+                                    if b[0] not in dsp_the_node_begins:
+                                        dependant_nodes.add(b[0])
+
+                                                   
+
+                    print("Dependant nodes: ", dependant_nodes)
+
+                    # Get all levels occupied by the DSP
+                    dsp_levels = [split_stage_levels[node] for node in dsp_the_node_begins]
+                    
+                    # Find all nodes in those levels
+                    nodes_in_dsp_levels = []
+                    for node, level in split_stage_levels.items():
+                        if level in dsp_levels and node not in dsp_the_node_begins:
+                            nodes_in_dsp_levels.append(node)
+
+                    print("Nodes of other concurrent DSPs: ", nodes_in_dsp_levels)
+                    has_overlap = bool(set(dependant_nodes) & set(nodes_in_dsp_levels))
+                    print("Has overlap: ", has_overlap)
+
+
+                    if has_overlap:
+                        overlapping_dsps = find_dsp_combos_in_levels(dsp_the_node_begins, split_stage_levels, dsp_combos)
+                        biggest_level = 0
+                        for item in overlapping_dsps:
+                            if item[-1] in dependant_nodes:
+
+                                if split_stage_levels[item[-1]] > biggest_level:
+                                    biggest_level = split_stage_levels[item[-1]]
+
+                                print(item, split_stage_levels[item[-1]])
+                        print("Last node of DSP block it overlaps: ", overlapping_dsps)
+
+                        # biggest_level = 0
+                        # for item in overlapping_dsps:
+                        #     if split_stage_levels[item] > biggest_level:
+                        #         biggest_level = split_stage_levels[item]
+
+                        print("Biggest level: ", biggest_level)
+                        print("Level of first node in DSP: ", split_stage_levels[current_node])
+                        move_down = biggest_level - split_stage_levels[current_node] + 1
+                        print("Move down by : ", move_down)
+
+                        node_descendants = nx.descendants(G, current_node) | {current_node}
+
+                        sorted_descendants = sorted(node_descendants, key=lambda x: split_stage_levels[x])
+    
+                        current_level = split_stage_levels[current_node]
+                        consecutive_list = []
+                        expected_level = current_level + 1
                         
-                        for item in dsps_same_line:
-                            for k in item:
-                                for m in list(G.out_edges(k)):
-                                    for l in dsp_of_node:
-                                        if m[1] == l:
-                                            print(m)
-                                            linked_to_same_level = True
+                        for descendant in sorted_descendants:
+                            desc_level = split_stage_levels[descendant]
+                            
+                            if desc_level == expected_level:
+                                consecutive_list.append(descendant)
+                                expected_level += 1
+                            elif desc_level - expected_level >= 1:
+                                # Gap of 3 or more levels, stop here
+                                break
+                            else:
+                                # Small gap skip to this level and continue
+                                consecutive_list.append(descendant)
+                                expected_level = desc_level + 1
 
-                    #             print(m[1], dsp_of_node)
+                        # In the consecurive list include the whole DSP combo
 
-                    # if len(matching_dsp_list) > 0 and len(matching_dsp_list) > max_dsp_length:
-                    #     max_dsp_length = len(matching_dsp_list)
-                    # The - {matching_dsp_list[0]} is needed because, a DSP node can be on the same line as the beginning of a different DSP node combo
-                    # print("Frozen node before: ", frozen_nodes)
-                    # print("linked to the same level :", linked_to_same_level)
-                    if all_present and not linked_to_same_level:
-                        # print("Ancestors: ", nx.ancestors(G, matching_dsp_list[-1]) | {matching_dsp_list[-1]})
+                        for combo in dsp_combos:
+                            # Check if any value in consecutive_list appears in this combo
+                            if any(value in combo for value in consecutive_list):
+                                consecutive_list.extend(combo)
+
+                        consecutive_list = list(set(consecutive_list))
+                                            
+                        print("Consecutive list is: ", consecutive_list)
+                        for item in consecutive_list:
+                            print(item, split_stage_levels[item])
+                            split_stage_levels[item] += move_down
+
+                        # for item, level in split_stage_levels.items():
+                        #     print(item, level, split_stage_levels[current_node])
+                        #     if level > split_stage_levels[current_node]:
+                        #         print(item, current_node)
+                        #         split_stage_levels[item] += move_down
+                        # split_stage_levels[current_node] += move_down
+                    
+                    print(current_node, first_term_dsp_combos)
+
+                    # beginning_of_other_dsp_combos = first_term_dsp_combos
+                    # beginning_of_other_dsp_combos.remove(current_node)
 
 
-                        frozen_nodes.update(nx.ancestors(G, matching_dsp_list[-1]) | {matching_dsp_list[-1]})
-                        # print("Froze nodes are: ", frozen_nodes)
-                else:
-                    continue
 
-        ## At this point the frozen nodes contain DSP blocks and ancestors that should not be moved
+                    # -----------
+
+        # print("Avoid overlap")
+        # CreateTree(user_input, dsp_combos, G, split_stage_levels)
 
 
-        # print("After looping through all, frozen node: ", frozen_nodes)
+        # All nodes in this level are the first nodes in a dsp combo
+        all_present = operation_set_this_level.issubset(first_term_dsp_combos)
+        print("All nodes in the level are the beginning of a DSP block: ", all_present)
 
-        # Nodes on the next level which do not contain shifts
-        #level_nodes = [k for k, v in split_stage_levels.items() if v == level_num and ('<<' not in G.nodes[k]['label'] and '>>' not in G.nodes[k]['label'])]
-        #level_nodes = set(level_nodes)
-        # print("Nodes on this level: ", operation_set_this_level)
-        difference = operation_set_this_level - frozen_nodes
-        # print("These nodes need to be moved: ", difference)
-        # Check that other nodes with the same level are in the frozen node set
-        if difference:
+        # Nodes that are not the beginning of a DSP block on this level
 
-            descendants = set()
-            for b in nodes_at_this_level:
-                nodes_below = [key for key, value in split_stage_levels.items() if value >= split_stage_levels[b]]
-                descendants.update(set(nodes_below))
 
-            # Descendants will be moved down
-            # Remove Frozen Nodes from descendants
-            descendants -= frozen_nodes
-            # print("List of descendants here: ", descendants)
-
-            while any(split_stage_levels.get(x) == split_stage_levels[next(iter(difference))] for x in frozen_nodes):
-                for item in descendants:
-                    split_stage_levels[item] = split_stage_levels[item] + 1
         
+
+
+        if not all_present:
+            non_first_dsp_nodes = list(operation_set_this_level & first_term_dsp_combos)
+            print("These nodes need to be moved 1 down:", non_first_dsp_nodes)
+            print(list(operation_set_this_level & first_term_dsp_combos))
+            print(operation_set_this_level)
+            print(first_term_dsp_combos)
+
+
+        if non_first_dsp_nodes:
+            print("Node and below needs to be moved down to beginning of DSP")
+            for item, level in split_stage_levels.items():
+                if level > split_stage_levels[non_first_dsp_nodes[0]]:
+                    print(item, current_node)
+                    split_stage_levels[item] += 1
+
+            for item in non_first_dsp_nodes:
+                split_stage_levels[item] += 1
+
+
+        # print("start at the same time")
+        # CreateTree(user_input, dsp_combos, G, split_stage_levels)
+                    
+        
+                    
+                    
+                   
         count += 1
         level_num += 1
 
+
+
+   
     return G, split_stage_levels
 
 
@@ -1444,6 +1568,9 @@ def DSPBlockNumber(user_input):
     return len(dsp_combos)
 
 
+
+
+## FUNCTION NEEDS ADJUSTING
 def GenerateGraph(user_input, frac_bit_num, show_graph):
 
     poly = PolynomialParser(user_input)
@@ -1475,16 +1602,19 @@ def GenerateGraph(user_input, frac_bit_num, show_graph):
     GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = adjusted_levels, display = False)
 
 
-    G_mod, split_stage_levels = split_into_dsp_stages(G_mod, adjusted_levels, dsp_combos)
+    # G_mod, split_stage_levels = split_into_dsp_stages(G_mod, adjusted_levels, dsp_combos)
   
 
-    split_shift_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
-    GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_shift_levels, display = show_graph)
+    # split_shift_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
+    # GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_shift_levels, display = show_graph)
 
-
-    return G_mod, dsp_combos, split_shift_levels
+#  , split_shift_levels
+    return G_mod, dsp_combos, adjusted_levels
     # print(dsp_combos)
 
+
+def CreateTree(user_input, dsp_combos, G_mod, split_shift_levels):
+    GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_shift_levels, display = True)
 
 
 
