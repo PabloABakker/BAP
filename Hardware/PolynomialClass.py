@@ -67,6 +67,11 @@ class Constant(PolynomialTerm):
         
     def is_number(self):
         return True
+    
+    def __eq__(self, second):
+        if isinstance(second, Constant):
+            return abs(self.value - second.value) < 1e-10 
+        return abs(self.value - second) < 1e-10
         
     @property
     def is_integer(self):
@@ -77,10 +82,7 @@ class Constant(PolynomialTerm):
             return self.value > second.value
         return self.value > second
         
-    def __eq__(self, second):
-        if isinstance(second, Constant):
-            return self.value == second.value
-        return self.value == second
+
     
     def __hash__(self):
         return hash(self.value)
@@ -205,7 +207,8 @@ class PolynomialParser:
 
     
     def parse_expression(self):
-        if self.current_char() == '-' and self.next_char() and not self.next_char().isdigit():
+        if self.current_char() == '-':
+        # if self.current_char() == '-' and self.next_char() and not self.next_char().isdigit():
             self.pos += 1
             # left = Multiplication(Constant(-1.0), self.parse_term())
 
