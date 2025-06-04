@@ -254,7 +254,7 @@ class GenerateTree:
             value_nodes = [n for n in graph.nodes() if graph.nodes[n]['type'] == 'value']
             shift_nodes = [n for n in graph.nodes() if graph.nodes[n]['type'] == 'shift']
             register_nodes = [n for n in graph.nodes() if graph.nodes[n]['type'] == 'register']
-
+            pshift_nodes = [n for n in graph.nodes() if graph.nodes[n]['type'] == 'pshift']
 
             operation_node_colors = [specific_node_colors[node] if node in specific_node_colors else 'violet'
                                     for node in operation_nodes]
@@ -270,6 +270,7 @@ class GenerateTree:
             nodes = nx.draw_networkx_nodes(graph, pos, nodelist=value_nodes, node_size=1500, node_color='paleturquoise', alpha=0.9)
             nodes = nx.draw_networkx_nodes(graph, pos, nodelist=shift_nodes, node_size=1500, node_color='violet', alpha=0.9)
             nodes = nx.draw_networkx_nodes(graph, pos, nodelist=register_nodes, node_size=1500, node_color='gold', alpha=0.9)
+            nodes = nx.draw_networkx_nodes(graph, pos, nodelist=pshift_nodes, node_size=1500, node_color='gold', alpha=0.9)
 
 
             nodes.set_zorder(1)
@@ -961,8 +962,8 @@ def add_postadder_shift_nodes(G, frac_bit_num, dsp_combos, adjusted_levels):
                             add_node_between.append(edge)
                     
         #print("here")
-        print(add_node_between)
-        print("Edges: ", add_node_between)
+        # print(add_node_between)
+        # print("Edges: ", add_node_between)
         node_num = max(G.nodes()) + 1
         for edge in add_node_between:
             descendants = set()
@@ -972,21 +973,25 @@ def add_postadder_shift_nodes(G, frac_bit_num, dsp_combos, adjusted_levels):
                 # Find the DSP matches that are on the same level
                 dsp_matched = [sublist for sublist in dsp_combos if any(adjusted_levels.get(x) == adjusted_levels[edge[1]] for x in sublist)]
                 dsp_matched = [item for sublist in dsp_matched for item in sublist]
-                print(dsp_matched)
-                print("Shifted result is needed right after")
+                # print(dsp_matched)
+                # print("Shifted result is needed right after")
 
+                smallest_level = np.inf
                 for t in dsp_matched:
-                    descendants.update(nx.descendants(G, t) | {t})
-                print(descendants)
+                    if adjusted_levels[t] < smallest_level:
+                        smallest_level = adjusted_levels[t]
+                # print(smallest_level)
 
                 for item, level in adjusted_levels.items():
-                    if level > adjusted_levels[dsp_matched[0]]:
+                    if level > smallest_level or (level == smallest_level and item in dsp_matched):
                         adjusted_levels[item] += 1
-                adjusted_levels[dsp_matched[0]] +=1
+                        # print()
+
+                # adjusted_levels[dsp_matched[0]] +=1
 
             G.remove_edge(edge[0], edge[1])
             label = "<< " + str(frac_bit_num)
-            G.add_node(node_num, label= label, type="shift")
+            G.add_node(node_num, label= label, type="pshift")
             G.add_edge(edge[0], node_num)
 
             G.add_edge(node_num, edge[1], label = edge[2]['label'])
@@ -1516,6 +1521,45 @@ def GenerateGraph(user_input, frac_bit_num, show_graph):
     GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = show_graph)
 
     return G_mod, dsp_combos, split_stage_levels
+
+
+
+
+def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph):
+
+    poly = PolynomialParser(user_input)
+    G = nx.DiGraph()
+    node_id, root_id = process_expression(poly.expr_tree, G, 0)
+
+
+    #G_mod = merge_negatives(G)
+    G_mod = implement_bit_shifts(G)
+
+    initial_levels = GenerateTree(G_mod, user_input, display = False).stage_levels(G_mod)
+
+
+    DSPSearch = DSPSolver(G_mod, initial_levels)
+    dsp_combos = DSPSearch.Solver
+    # print("Number of DSP Blocks: ", len(dsp_combos))
+
+    # # Displays tree and assigns pos to the variable
+
+    split_stage_levels = rearrange_dsps(G_mod, initial_levels, dsp_combos)
+
+    G_mod, split_stage_levels = split_into_dsp_stages(G_mod, split_stage_levels, dsp_combos)
+  
+    split_stage_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
+
+    G_mod, split_stage_levels = add_postadder_shift_nodes(G_mod, frac_bit_num, dsp_combos, initial_levels)
+
+
+    # G_mod, split_stage_levels = add_registers(G_mod, split_stage_levels, dsp_combos)
+
+    GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = show_graph)
+
+    return G_mod, dsp_combos, split_stage_levels
+
+
 
 
 
