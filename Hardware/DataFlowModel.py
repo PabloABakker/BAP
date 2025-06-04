@@ -733,23 +733,33 @@ def implement_bit_shifts(G):
 
     # Remove the node with the value
     remove_vals = [] 
-    # Contains the multiplocation node. Remove the nodes and its edges
+    # Contains the multiplication node. Remove the nodes and its edges
     remove_nodes = []  
-    # Each sub list has the structure: [(... Bit shifts ... , operation), parent node, child node]
+    # Each sub list has the structure: [(... Bit shifts ... , operation), parent node, child node, child edge label]
     bit_shift_nodes = [] 
     single_bit_shift_nodes = []
+    
     for node in G.nodes():
         if G.nodes[node]['label'] == '*' and len(G.in_edges(node)) == 2:
-            #print(G.nodes[node])
 
-            edges = list(G.in_edges(node, data = True))
-            #print(edges)
-
-            for i, tup in enumerate(edges):
-                if(tup[2]['label'] == 'left'):
+            edges = list(G.in_edges(node, data=True))
+            
+            left_edge = None
+            right_edge = None
+            for tup in edges:
+                if 'label' in tup[2] and tup[2]['label'] == 'left':
                     left_edge = tup
-                else:
+                elif 'label' in tup[2] and tup[2]['label'] == 'right':
                     right_edge = tup
+                # else:
+                #     # Handle unlabeled edges - assign based on order
+                #     if left_edge is None:
+                #         left_edge = tup
+                #     else:
+                #         right_edge = tup
+            
+            if left_edge is None or right_edge is None:
+                continue
 
             # If the left edge is not a number, then continue with the loop
             if not check_numeric(G.nodes[left_edge[0]]['label']):
@@ -759,90 +769,82 @@ def implement_bit_shifts(G):
             if G.nodes[left_edge[0]]['label'] == '-1':
                 continue
             
-            # print(node)
             val = G.nodes[left_edge[0]]['label']
 
             # Adds the node that is the number
             remove_vals.append(left_edge[0]) 
 
-            # Adds multiplication node whos in edges will be removed
+            # Adds multiplication node whose edges will be removed
             remove_nodes.append(node) 
             parent_node = right_edge[0]
             
-            child_node = list(G.out_edges(node))
-            if child_node:
-                child_node = child_node[0][1]
+            # Get child node and its edge label
+            child_edges = list(G.out_edges(node, data=True))
+            if child_edges:
+                child_node = child_edges[0][1]
+                child_edge_label = child_edges[0][2]['label']
             else:
-                child_node = []
+                child_node = None
+                child_edge_label = None
 
             if float(val) > 0:
                 if math.log2(float(val)).is_integer():
-
                     shift_val = math.log2(float(val))
-                    single_bit_shift_nodes.append([shift_val, parent_node, child_node])
-
+                    single_bit_shift_nodes.append([shift_val, parent_node, child_node, child_edge_label])
                 else:
                     best_combination, best_sum = closest_power_of_2(float(val))
-
-                    bit_shift_nodes.append([best_combination, parent_node, child_node])
+                    bit_shift_nodes.append([best_combination, parent_node, child_node, child_edge_label])
 
     # Runs if it is a sum combination of bit shift nodes
     if single_bit_shift_nodes:
         max_id = max(G.nodes()) + 1
         
         for k, series in enumerate(single_bit_shift_nodes):
-            multiplication_node = remove_nodes[k]
+            shift_val, parent_node, child_node, child_edge_label = series
 
-            if series[0] >=  0:
-                label = "<< " + str(series[0])
-            elif series[0] < 0:
-                label = ">> " + str(-series[0])
+            if shift_val >= 0:
+                label = "<< " + str(shift_val)
+            elif shift_val < 0:
+                label = ">> " + str(-shift_val)
 
-            # print(label)
-            G.add_node(max_id, label = label, type = "shift")
-            G.add_edge(series[1], max_id)
-            #G.add_edge(max_id, series[2])
-            if list(G.out_edges(multiplication_node)):
-                out_edge_label = list(G.out_edges(multiplication_node, data = True))[0][2]['label']
-
-                G.add_edge(max_id, series[2], label = out_edge_label)
+            G.add_node(max_id, label=label, type="shift")
+            G.add_edge(parent_node, max_id)
+            
+            if child_node is not None:
+                G.add_edge(max_id, child_node, label=child_edge_label)
 
             max_id += 1
     
     if bit_shift_nodes:
         max_id = max(G.nodes()) + 1
         for j, combo in enumerate(bit_shift_nodes):
-            multiplication_node = remove_nodes[j] # Related multiplication node that needs to be deleted
-            # print(combo)
+            best_combination, parent_node, child_node, child_edge_label = combo
 
-            node_operation = combo[0][2]
+            node_operation = best_combination[2]
 
-            G.add_node(max_id, label = node_operation, type = "operation")
+            G.add_node(max_id, label=node_operation, type="operation")
 
             operator_id = max_id
             max_id += 1
 
-            for i in [combo[0][0], combo[0][1]]:
+            for i in [best_combination[0], best_combination[1]]:
                 if i < 0:
                     label = ">> " + str(abs(i))
                 else:
                     label = "<< " + str(abs(i))
 
-                if i == combo[0][0]:
+                if i == best_combination[0]:
                     edge_label = "left"
                 else:
                     edge_label = "right"
 
-                G.add_node(max_id, label= label, type="shift")
-
-                G.add_edge(combo[1], max_id)
-                G.add_edge(max_id, operator_id, label = edge_label)
+                G.add_node(max_id, label=label, type="shift")
+                G.add_edge(parent_node, max_id)
+                G.add_edge(max_id, operator_id, label=edge_label)
                 max_id += 1
 
-            if list(G.out_edges(multiplication_node)):
-                out_edge_label = list(G.out_edges(multiplication_node, data = True))[0][2]['label'] 
-
-                G.add_edge(operator_id, combo[2], label = out_edge_label)
+            if child_node is not None:
+                G.add_edge(operator_id, child_node, label=child_edge_label)
 
     ## Do not remove nodes that are of type value and have a child that is not a multiplication symbol
 
@@ -852,8 +854,6 @@ def implement_bit_shifts(G):
         if '+' in children_operations or '-' in children_operations or G.nodes[node]['label'] == '-1':
             remove_vals.remove(node)
 
-    # print(remove_vals)
-
     G.remove_nodes_from(remove_vals)
     for item in remove_nodes:
         G.remove_node(item)
@@ -862,6 +862,7 @@ def implement_bit_shifts(G):
     G = remove_0_bit_shifts(G)
 
     return G
+
 
 
 def closest_power_of_2(coeff):
@@ -1495,7 +1496,6 @@ def GenerateGraph(user_input, frac_bit_num, show_graph):
     G = nx.DiGraph()
     node_id, root_id = process_expression(poly.expr_tree, G, 0)
 
-
     #G_mod = merge_negatives(G)
     G_mod = implement_bit_shifts(G)
 
@@ -1516,7 +1516,7 @@ def GenerateGraph(user_input, frac_bit_num, show_graph):
   
     split_stage_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
 
-    G_mod, split_stage_levels = add_registers(G_mod, split_stage_levels, dsp_combos)
+    # G_mod, split_stage_levels = add_registers(G_mod, split_stage_levels, dsp_combos)
 
     GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = show_graph)
 
@@ -1525,7 +1525,7 @@ def GenerateGraph(user_input, frac_bit_num, show_graph):
 
 
 
-def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph):
+def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph, quantised):
 
     poly = PolynomialParser(user_input)
     G = nx.DiGraph()
@@ -1550,7 +1550,10 @@ def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph):
   
     split_stage_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
 
-    G_mod, split_stage_levels = add_postadder_shift_nodes(G_mod, frac_bit_num, dsp_combos, initial_levels)
+
+    if quantised:
+
+        G_mod, split_stage_levels = add_postadder_shift_nodes(G_mod, frac_bit_num, dsp_combos, initial_levels)
 
 
     # G_mod, split_stage_levels = add_registers(G_mod, split_stage_levels, dsp_combos)
