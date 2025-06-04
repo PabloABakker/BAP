@@ -268,7 +268,7 @@ class GenerateTree:
             nodes.set_zorder(1)
 
             nodes = nx.draw_networkx_nodes(graph, pos, nodelist=value_nodes, node_size=1500, node_color='paleturquoise', alpha=0.9)
-            # nodes = nx.draw_networkx_nodes(graph, pos, nodelist=shift_nodes, node_size=1500, node_color='gold', alpha=0.9)
+            nodes = nx.draw_networkx_nodes(graph, pos, nodelist=shift_nodes, node_size=1500, node_color='violet', alpha=0.9)
             nodes = nx.draw_networkx_nodes(graph, pos, nodelist=register_nodes, node_size=1500, node_color='gold', alpha=0.9)
 
 
@@ -798,7 +798,7 @@ def implement_bit_shifts(G):
                 label = ">> " + str(-series[0])
 
             # print(label)
-            G.add_node(max_id, label = label, type = "operation")
+            G.add_node(max_id, label = label, type = "shift")
             G.add_edge(series[1], max_id)
             #G.add_edge(max_id, series[2])
             if list(G.out_edges(multiplication_node)):
@@ -832,7 +832,7 @@ def implement_bit_shifts(G):
                 else:
                     edge_label = "right"
 
-                G.add_node(max_id, label= label, type="operation")
+                G.add_node(max_id, label= label, type="shift")
 
                 G.add_edge(combo[1], max_id)
                 G.add_edge(max_id, operator_id, label = edge_label)
@@ -1146,7 +1146,6 @@ def split_into_dsp_stages(G, adjusted_levels, dsp_combos):
                 for k in dsp_the_node_begins:
                     # Add the parent nodes of the dsp combo
                     for m in list(G.in_edges(k)):
-                        # print(m, m[0])
                         if G.nodes[m[0]]['type'] != 'shift':
                             if m[0] not in dsp_the_node_begins:
                                 dependant_nodes.add(m[0])
