@@ -295,7 +295,7 @@ class GenerateTree:
 
             plt.title(f"Node Graph for: ${(polynomial_str.replace('**', '^')).replace('*', '')}$", fontsize=16)
 
-            plt.title(f"Node Graph for", fontsize=16)
+            # plt.title(f"Node Graph for", fontsize=16)
             plt.axis('off')
             plt.tight_layout()
             plt.show() 
@@ -730,7 +730,6 @@ def relabel_graph(G):
 
 
 def implement_bit_shifts(G):
-
     # Remove the node with the value
     remove_vals = [] 
     # Contains the multiplication node. Remove the nodes and its edges
@@ -827,20 +826,37 @@ def implement_bit_shifts(G):
             operator_id = max_id
             max_id += 1
 
+            # Track which edge labels are already used for this operator
+            used_labels = set()
+            existing_edges = list(G.in_edges(operator_id, data=True))
+            for edge in existing_edges:
+                if 'label' in edge[2]:
+                    used_labels.add(edge[2]['label'])
+
             for i in [best_combination[0], best_combination[1]]:
                 if i < 0:
                     label = ">> " + str(abs(i))
                 else:
                     label = "<< " + str(abs(i))
 
+                # Determine edge label while avoiding duplicates
                 if i == best_combination[0]:
-                    edge_label = "left"
+                    if "left" not in used_labels:
+                        edge_label = "left"
+                    elif "right" not in used_labels:
+                        edge_label = "right"
                 else:
-                    edge_label = "right"
+                    if "right" not in used_labels:
+                        edge_label = "right"
+                    elif "left" not in used_labels:
+                        edge_label = "left"
 
                 G.add_node(max_id, label=label, type="shift")
                 G.add_edge(parent_node, max_id)
                 G.add_edge(max_id, operator_id, label=edge_label)
+                
+                # Add this label to used_labels for next iteration
+                used_labels.add(edge_label)
                 max_id += 1
 
             if child_node is not None:
@@ -1531,6 +1547,7 @@ def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph, quantised):
     G = nx.DiGraph()
     node_id, root_id = process_expression(poly.expr_tree, G, 0)
 
+    GenerateTree(G, user_input, display = True)
 
     #G_mod = merge_negatives(G)
     G_mod = implement_bit_shifts(G)
@@ -1550,9 +1567,11 @@ def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph, quantised):
   
     split_stage_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
 
+    GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = show_graph)
+
 
     if quantised:
-
+        print("IT is quantised")
         G_mod, split_stage_levels = add_postadder_shift_nodes(G_mod, frac_bit_num, dsp_combos, initial_levels)
 
 
