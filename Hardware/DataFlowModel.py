@@ -768,7 +768,7 @@ def implement_bit_shifts(G):
             val = G.nodes[left_edge[0]]['label']
             constant_node = left_edge[0]
 
-            # Only remove constants that are only used by multiplication nodes
+            # Only remove constants that are exclusively used by multiplication nodes
             constant_out_edges = list(G.out_edges(constant_node))
             all_targets_are_multiplication = True
             
@@ -777,15 +777,15 @@ def implement_bit_shifts(G):
                     all_targets_are_multiplication = False
                     break
             
-            # Only add for removal if all parents are multiplication nodes
+            # Only add for removal if ALL targets are multiplication nodes
             if all_targets_are_multiplication:
                 remove_vals.append(constant_node)
 
-            # multiplication node is always added
+            # Always add the multiplication node for removal
             remove_nodes.append(node) 
             parent_node = right_edge[0]
             
-            # Get all child nodes and their edge labels
+            # Get ALL child nodes and their edge labels 
             child_connections = []
             child_edges = list(G.out_edges(node, data=True))
             for edge in child_edges:
@@ -797,13 +797,11 @@ def implement_bit_shifts(G):
             if float(val) > 0:
                 if math.log2(float(val)).is_integer():
                     shift_val = math.log2(float(val))
-                    
 
                     for child_node, child_edge_label in child_connections:
                         single_bit_shift_nodes.append([shift_val, parent_node, child_node, child_edge_label])
                 else:
                     best_combination, best_sum = closest_power_of_2(float(val))
-                    
 
                     for child_node, child_edge_label in child_connections:
                         bit_shift_nodes.append([best_combination, parent_node, child_node, child_edge_label])
@@ -843,7 +841,7 @@ def implement_bit_shifts(G):
             operator_id = max_id
             max_id += 1
 
-            # To track the labels arleady used to avoid edges with the same label
+            # Track which edge labels are already used for this operator
             used_labels = set()
             existing_edges = list(G.in_edges(operator_id, data=True))
             for edge in existing_edges:
@@ -856,7 +854,6 @@ def implement_bit_shifts(G):
                 else:
                     label = "<< " + str(abs(i))
 
-                # Determine edge label while avoiding duplicates
                 if i == best_combination[0]:
                     if "left" not in used_labels:
                         edge_label = "left"
@@ -879,7 +876,6 @@ def implement_bit_shifts(G):
                 else:
                     G.add_edge(max_id, operator_id)
                 
-
                 if edge_label is not None:
                     used_labels.add(edge_label)
                 max_id += 1
@@ -890,10 +886,8 @@ def implement_bit_shifts(G):
                 else:
                     G.add_edge(operator_id, child_node)
 
-    # Remove duplicates 
     remove_vals = list(set(remove_vals))
     remove_nodes = list(set(remove_nodes))
-
 
     for node in remove_vals:
         if node in G.nodes():
@@ -1152,56 +1146,332 @@ def find_dsp_combos_in_levels(dsp_the_node_begins, split_stage_levels, dsp_combo
 
 def split_into_dsp_stages(G, adjusted_levels, dsp_combos):
 
-    
     split_stage_levels = dict(adjusted_levels)
-    max_iterations = len(G.nodes()) * 7 
+    max_iterations = len(G.nodes()) * 3
     iteration_count = 0
     
-    # Builds the DSP dependency 
     dsp_dependencies = build_dsp_dependency_graph(G, dsp_combos, split_stage_levels)
     
-    # Find all potential start levels
-    made_change = True
-    while made_change and iteration_count < max_iterations:
+    made_changes = True
+    while made_changes and iteration_count < max_iterations:
         iteration_count += 1
-        made_change = False
+        made_changes = False
         
-        pipeline_levels = analyse_pipeline_levels(G, split_stage_levels, dsp_combos)
+        # enforce timing constraints for all DSP combos
+        for i, dsp_combo in enumerate(dsp_combos):
+            if enforce_dsp_timing_constraints(G, dsp_combo, split_stage_levels, dsp_combos, i):
+                made_changes = True
         
-        # Go through each level in order
-        for level_num in sorted(pipeline_levels.keys()):
-            level_info = pipeline_levels[level_num]
+        # Handle mixed node conflicts
+        pipeline_analysis = analyse_pipeline_levels(G, split_stage_levels, dsp_combos)
+        
+        for level_num in sorted(pipeline_analysis.keys()):
+            level_info = pipeline_analysis[level_num]
             
-            # Check if the nodes are mixed, i.e. not all nodes start a dsp combo
-            if level_info['mixed_nodes']:
-               
-                # A list of the DSPs that need to be moved
+            if level_info['has_mixed_nodes']:
                 conflicting_dsps = level_info['starting_dsps']
-               
                 
-                # Find the next available level for the dsp combo
                 for dsp_combo in conflicting_dsps:
-                    new_start_level = next_beginning_level(dsp_combo, split_stage_levels, dsp_combos, dsp_dependencies, level_num, G)
+                    new_start_level = find_next_clean_level(dsp_combo, split_stage_levels, dsp_combos, dsp_dependencies, level_num, G)
                     
                     if new_start_level > split_stage_levels[dsp_combo[0]]:
-
-                        # Move the whole DSP to this new start level
-                        move_dsp_combo_to_level(dsp_combo, new_start_level, split_stage_levels)
-                        made_change = True
-                        
-                        # Move any of the DSPs that depend on that DSP as well
-                        dependent_dsps = find_dependent_dsps(dsp_combo, dsp_dependencies)
-                        
-                        for dep_dsp in dependent_dsps:
-                            dep_earliest = earliest_start_level(dep_dsp, split_stage_levels, dsp_combos, dsp_dependencies, G)
-                            if dep_earliest > split_stage_levels[dep_dsp[0]]:
-                                move_dsp_combo_to_level(dep_dsp, dep_earliest, split_stage_levels)
+                        move_dsp_combo_with_dependents(G, dsp_combo, new_start_level, split_stage_levels, dsp_combos)
+                        made_changes = True
                 
-                if made_change:
+                if made_changes:
                     break
-  
-
+        
+    
+    validate_final_schedule(G, split_stage_levels, dsp_combos)
+    
     return G, split_stage_levels
+
+
+def enforce_dsp_timing_constraints(G, dsp_combo, levels, all_dsp_combos, combo_index):
+
+    current_start_level = levels[dsp_combo[0]]
+    
+    # Get all input nodes
+    all_input_nodes = get_all_dsp_input_nodes(dsp_combo, G)
+    
+    # Find the latest completion level of all inputs
+    latest_input_completion = -1
+    
+    for input_node in all_input_nodes:
+        if input_node not in levels:
+            continue
+            
+        # Check if input is part of a DSP combo
+        input_combo = find_dsp_combo_containing_node(input_node, all_dsp_combos)
+        
+        if input_combo:
+           
+            input_completion = max(levels[n] for n in input_combo if n in levels)
+        else:
+            # Standalone input
+            input_completion = levels[input_node]
+        
+        latest_input_completion = max(latest_input_completion, input_completion)
+    
+    
+    # DSP must start after all inputs complete
+    required_start_level = latest_input_completion + 1
+    
+    if current_start_level <= latest_input_completion:
+    
+        # Move DSP combo and all dependents
+        move_dsp_combo_with_dependents(G, dsp_combo, required_start_level, levels, all_dsp_combos)
+        return True
+    
+
+    return False
+
+
+def move_dsp_combo_with_dependents(G, dsp_combo, new_start_level, levels, all_dsp_combos):
+
+    # Calculate the shift amount
+    old_start_level = levels[dsp_combo[0]]
+    level_shift = new_start_level - old_start_level
+    
+    
+    if level_shift <= 0:
+        return
+    
+    # Find all dependent nodes
+    dependent_nodes = find_all_dependent_nodes(G, dsp_combo, levels, all_dsp_combos)
+    
+    # identify all DSP combos that need to be moved
+    affected_dsp_combos = set()
+    for node in dependent_nodes:
+        combo = find_dsp_combo_containing_node(node, all_dsp_combos)
+        if combo:
+            affected_dsp_combos.add(tuple(combo))
+    
+    
+    # Move the source DSP combo
+    for i, node in enumerate(dsp_combo):
+        old_level = levels[node]
+        new_level = new_start_level + i
+        levels[node] = new_level
+    
+    # Move each affected DSP combo as a complete unit
+    for combo_tuple in affected_dsp_combos:
+        combo = list(combo_tuple)
+
+        # Find the current start level of this combo
+        current_start = min(levels[node] for node in combo)
+
+        # Calculate new start level (must be after the shift)
+        new_combo_start = current_start + level_shift
+        
+        
+        # Move the entire combo maintaining internal spacing
+        for i, node in enumerate(combo):
+            old_level = levels[node]
+            new_level = new_combo_start + i
+            levels[node] = new_level
+    
+    # Move any remaining standalone dependent nodes
+    standalone_nodes = dependent_nodes - set().union(*[set(combo) for combo in affected_dsp_combos])
+    if standalone_nodes:
+        for node in standalone_nodes:
+            old_level = levels[node]
+            new_level = old_level + level_shift
+            levels[node] = new_level
+
+
+def find_all_dependent_nodes(G, source_dsp_combo, levels, all_dsp_combos):
+
+    dependent_nodes = set()
+    
+    
+    # Get all descendants of all nodes in the source DSP combo
+    for node in source_dsp_combo:
+        descendants = nx.descendants(G, node)
+        dependent_nodes.update(descendants)
+    
+    # Remove any nodes that are part of the source DSP combo itself
+    dependent_nodes -= set(source_dsp_combo)
+    
+    # include the entire DSP combo to maintain internal ordering
+    dependent_dsp_combos = set()
+    for node in list(dependent_nodes):  # Use list() to avoid modification during iteration
+        combo = find_dsp_combo_containing_node(node, all_dsp_combos)
+        if combo:
+            dependent_dsp_combos.add(tuple(combo))
+    
+    # Add all nodes from dependent DSP combos
+    for combo_tuple in dependent_dsp_combos:
+        dependent_nodes.update(combo_tuple)
+    
+    return dependent_nodes
+
+
+def get_all_dsp_input_nodes(dsp_combo, G):
+
+    input_nodes = set()
+    
+    
+    for dsp_node in dsp_combo:
+        if dsp_node not in G.nodes():
+            continue
+        
+        
+        # Get all predecessors of this DSP node
+        for pred in G.predecessors(dsp_node):
+            if pred not in G.nodes():
+                continue
+                
+            # Skip if predecessor is also in the same DSP combo
+            if pred in dsp_combo:
+                continue
+                
+            # Handle shift nodes - look through them to find actual input
+            if G.nodes[pred].get('type') == 'shift':
+                # Add the nodes that feed into the shift
+                for shift_input in G.predecessors(pred):
+                    if shift_input not in dsp_combo:
+                        input_nodes.add(shift_input)
+            else:
+                # Direct input node
+                input_nodes.add(pred)
+    
+    return input_nodes
+
+
+def validate_final_schedule(G, levels, dsp_combos):
+
+    violations = []
+    
+    for i, dsp_combo in enumerate(dsp_combos):
+        
+        all_input_nodes = get_all_dsp_input_nodes(dsp_combo, G)
+        current_start_level = levels[dsp_combo[0]]
+        
+        for input_node in all_input_nodes:
+            if input_node not in levels:
+                continue
+                
+            input_combo = find_dsp_combo_containing_node(input_node, dsp_combos)
+            
+            if input_combo:
+                input_completion = max(levels[n] for n in input_combo if n in levels)
+            else:
+                input_completion = levels[input_node]
+            
+            if current_start_level <= input_completion:
+                violation = f"DSP {dsp_combo} starts at {current_start_level} but input {input_node} completes at {input_completion}"
+                violations.append(violation)
+    
+    if violations:
+        print("TIMING VIOLATIONS FOUND")
+        for v in violations:
+            print(f"{v}")
+    else:
+        print("No timing violations found")
+    
+    return violations
+
+
+def calculate_earliest_start_level(dsp_combo, levels, dependencies, G):
+
+    earliest = 0
+        
+    # Get ALL input nodes to this DSP combo
+    all_input_nodes = get_all_dsp_input_nodes(dsp_combo, G)
+    
+    # Find which DSP combos these input nodes belong to
+    all_dsp_combos = []
+    for dep in dependencies.keys():
+        all_dsp_combos.append(list(dep))
+    all_dsp_combos.append(dsp_combo)
+    
+    for input_node in all_input_nodes:
+        if input_node not in levels:
+            continue
+            
+        # Find which DSP combo this input belongs to (if any)
+        input_dsp_combo = find_dsp_combo_containing_node(input_node, all_dsp_combos)
+        
+        if input_dsp_combo:
+            # Input is part of a DSP combo - must wait for entire combo to complete
+            input_combo_levels = []
+            for n in input_dsp_combo:
+                if n in levels:
+                    input_combo_levels.append(levels[n])
+            
+            if input_combo_levels:
+                input_completion_level = max(input_combo_levels)
+                earliest = max(earliest, input_completion_level + 1)
+        else:
+            # Standalone input node - must wait for it to complete
+            earliest = max(earliest, levels[input_node] + 1)
+    
+    return earliest
+
+
+def find_next_clean_level(dsp_combo, levels, all_dsp_combos, dependencies, min_level, G):
+       
+    # Calculate earliest possible start 
+    earliest_start = calculate_earliest_start_level(dsp_combo, levels, dependencies, G)
+    start_search = max(min_level + 1, earliest_start)
+    
+    max_search_level = max(levels.values()) + len(all_dsp_combos) + 5
+    
+    for candidate_level in range(start_search, max_search_level + 1):
+        if is_level_available_for_dsp_start(candidate_level, dsp_combo, levels, all_dsp_combos, G):
+            return candidate_level
+    
+    new_level = max(levels.values()) + 1
+    return new_level
+
+
+def is_level_available_for_dsp_start(level, dsp_combo, levels, all_dsp_combos, G):
+    
+    # Get all first nodes of DSP combos (these can coexist at same level)
+    first_dsp_nodes = {combo[0] for combo in all_dsp_combos if combo}
+    
+    # Find all input nodes to this DSP combo
+    all_input_nodes = get_all_dsp_input_nodes(dsp_combo, G)
+    
+    # Check that all input nodes are at level-1 or earlier
+    for input_node in all_input_nodes:
+        if input_node in levels:
+            input_level = levels[input_node]
+            if input_level >= level:
+                return False
+    
+    # Check that starting level only has starting DSP nodes
+    nodes_at_start_level = [node for node, node_level in levels.items() if node_level == level]
+    for node_at_level in nodes_at_start_level:
+        if node_at_level not in dsp_combo and node_at_level not in first_dsp_nodes:
+            return False
+    
+    # Check that DSP combo levels dont conflict with other DSP combos
+    dsp_levels_needed = list(range(level, level + len(dsp_combo)))
+    
+    for other_combo in all_dsp_combos:
+        if tuple(other_combo) == tuple(dsp_combo):
+            continue
+            
+        for i, other_node in enumerate(other_combo):
+            if other_node not in levels:
+                continue
+                
+            other_node_level = levels[other_node]
+            other_combo_start = other_node_level - i
+            other_levels_needed = range(other_combo_start, other_combo_start + len(other_combo))
+            
+            # Checks for overlap
+            for our_level in dsp_levels_needed:
+                if our_level in other_levels_needed:
+                    our_position = our_level - level
+                    other_position = our_level - other_combo_start
+                    
+                    if not (our_position == 0 and other_position == 0):
+                        return False
+    
+    return True
 
 
 def build_dsp_dependency_graph(G, dsp_combos, levels):
@@ -1211,14 +1481,13 @@ def build_dsp_dependency_graph(G, dsp_combos, levels):
     for dsp_combo in dsp_combos:
         dependencies[tuple(dsp_combo)] = set()
         
-        # Finds all inputs to this DSP combo
+        # Find all inputs to this DSP combo
         for node in dsp_combo:
             for pred in G.predecessors(node):
                 if pred in G.nodes() and G.nodes[pred]['type'] != 'shift':
-                    
-                    # Finds the DSP combo the predecessor is part of
-                    pred_dsp = dsp_combo_of_node(pred, dsp_combos)
 
+                    # Find which DSP combo this predecessor belongs to
+                    pred_dsp = find_dsp_combo_containing_node(pred, dsp_combos)
                     if pred_dsp and tuple(pred_dsp) != tuple(dsp_combo):
                         dependencies[tuple(dsp_combo)].add(tuple(pred_dsp))
     
@@ -1227,171 +1496,50 @@ def build_dsp_dependency_graph(G, dsp_combos, levels):
 
 def analyse_pipeline_levels(G, levels, dsp_combos):
 
-    pipeline_levels = {}
+    pipeline_analysis = {}
     
-    # Group the nodes by their level
+    # Group nodes by level
     nodes_by_level = {}
     for node, level in levels.items():
         if level not in nodes_by_level:
             nodes_by_level[level] = []
         nodes_by_level[level].append(node)
     
-    
+    # analyse each level
     for level, nodes in nodes_by_level.items():
-        # Nodes on a level that are operations
-        operation_nodes = [n for n in nodes if n in G.nodes() and G.nodes[n]['type'] == 'operation' and '<<' not in G.nodes[n]['label'] and  '>>' not in G.nodes[n]['label']]
+        operation_nodes = [n for n in nodes if n in G.nodes() and G.nodes[n]['type'] == 'operation' and '<<' not in G.nodes[n]['label'] and '>>' not in G.nodes[n]['label']]
         
-        # The DSP combos that start at this specific level
+        # Find which DSP combos start at this level
         starting_dsps = []
         continuing_dsps = []
         first_dsp_nodes = {combo[0] for combo in dsp_combos if combo}
         
         for node in operation_nodes:
             if node in first_dsp_nodes:
-
-                # The current node is at the beginning of a DSP combo
-                dsp_combo = dsp_combo_of_node(node, dsp_combos)
+                dsp_combo = find_dsp_combo_containing_node(node, dsp_combos)
                 if dsp_combo:
                     starting_dsps.append(dsp_combo)
             else:
-
-                # The node is not the first one
-                dsp_combo = dsp_combo_of_node(node, dsp_combos)
+                dsp_combo = find_dsp_combo_containing_node(node, dsp_combos)
                 if dsp_combo:
                     continuing_dsps.append(dsp_combo)
         
-
-        pipeline_levels[level] = {
+        pipeline_analysis[level] = {
             'operation_nodes': operation_nodes,
             'starting_dsps': starting_dsps,
             'continuing_dsps': continuing_dsps,
-            'mixed_nodes': len(starting_dsps) > 0 and len(continuing_dsps) > 0
+            'has_mixed_nodes': len(starting_dsps) > 0 and len(continuing_dsps) > 0,
         }
     
-    return pipeline_levels
+    return pipeline_analysis
 
 
-def dsp_combo_of_node(node, dsp_combos):
-    
+def find_dsp_combo_containing_node(node, dsp_combos):
+
     for combo in dsp_combos:
         if node in combo:
             return combo
-        
     return None
-
-
-def next_beginning_level(dsp_combo, levels, all_dsp_combos, dependencies, min_level, G):
-    
-    
-    earliest_start = earliest_start_level(dsp_combo, levels, all_dsp_combos, dependencies, G)
-    start_search = max(min_level + 1, earliest_start)
-    
-
-    max_search_level = max(levels.values()) + len(all_dsp_combos)
-    
-    for candidate_level in range(start_search, max_search_level + 1):
-
-        if level_possible_to_start_dsp(candidate_level, dsp_combo, levels, all_dsp_combos):
-
-            return candidate_level
-    
-    # Add a new level at the end if nothing is returned in the loop
-    new_level = max(levels.values()) + 1
-
-    return new_level
-
-
-def earliest_start_level(dsp_combo, levels, all_dsp_combos, dependencies, G):
-    earliest = 0
-    
-    # check the inputs of each node in the DSP combo
-    for node in dsp_combo:
-        
-        pred_list = list(G.predecessors(node))
-
-        for pred in pred_list:
-            if G.nodes[pred]['type'] == 'shift':
-                continue
-                
-            # # Find which DSP combo the predecessor node is part of
-            # all_combos = []
-            # dep_keys = list(dependencies.keys())
-            # for dep in dep_keys:
-            #     all_combos.append(list(dep))
-
-            # all_combos.append(dsp_combo)
-            
-
-            pred_dsp_combo = dsp_combo_of_node(pred, all_dsp_combos)
-            
-          
-            if pred_dsp_combo:
-                pred_combo_tuple = tuple(pred_dsp_combo)
-                current_combo_tuple = tuple(dsp_combo)
-                
-
-                
-                if pred_combo_tuple != current_combo_tuple:
-                    # The predecessor is from a different combo
-                    # so the next one can only start after the previous one is completely done
-                    
-                    level_list = []
-                    for n in pred_dsp_combo:
-                        if n in levels:
-                            level_list.append(levels[n])
-                    
-                    pred_completion_level = max(level_list)
-                    new_earliest = pred_completion_level + 1
-                    
-                    if new_earliest > earliest:
-                        earliest = new_earliest
-                        
-    
-    return earliest
-
-
-def level_possible_to_start_dsp(level, dsp_combo, levels, all_dsp_combos):
-    
-    # Looks for the nodes in this level, if the dsp were to start here
-    nodes_at_level = []
-    
-    
-    for other_combo in all_dsp_combos:
-        if tuple(other_combo) != tuple(dsp_combo):
-
-            for i, node in enumerate(other_combo):
-
-                node_level = levels[node]
-               
-
-                combo_start_level = node_level - i
-                if combo_start_level <= level < combo_start_level + len(other_combo):
-                    nodes_at_level.append(node)
-    
-    
-    first_dsp_nodes = {combo[0] for combo in all_dsp_combos if combo}
-    non_first_nodes = [node for node in nodes_at_level if node not in first_dsp_nodes]
-
-    possible_to_start = (len(non_first_nodes) == 0)
-    
-    return possible_to_start
-
-
-def move_dsp_combo_to_level(dsp_combo, new_start_level, levels):
-
-    for i, node in enumerate(dsp_combo):
-        levels[node] = new_start_level + i
-
-
-def find_dependent_dsps(dsp_combo, dependencies):
-
-    dependents = []
-    
-    for combo, deps in dependencies.items():
-        dependents.append(list(combo))
-    
-    return dependents
-
 
 
 
