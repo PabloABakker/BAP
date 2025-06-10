@@ -1265,7 +1265,7 @@ def create_kernel_cube_matrix_multi(kernels_cokernels, symbols, expression_bound
 # Implementation of the Distill algorithm to find the best rectangle in the KCM
 # The search for the best rectangle is not done exhaustively. Heuristics are used
 
-def distill_algorithm(kcm_df, expression_strings=None, expression_boundaries=None):
+def distill_algorithm(kcm_df, expression_strings=None, expression_boundaries=None, seed_num = 10):
 
     print("Started the distil algorithm")
     
@@ -1300,7 +1300,7 @@ def distill_algorithm(kcm_df, expression_strings=None, expression_boundaries=Non
         print(f"\n--- Rectangle selection iteration {rectangle_iteration} ---")
         
         # Generate seeds from current working matrix
-        seeds = generate_distill_seeds(working_binary_matrix)
+        seeds = generate_distill_seeds(working_binary_matrix, seed_num)
         print("Generated seeds: ", seeds)
         
         if not seeds:
@@ -1308,23 +1308,31 @@ def distill_algorithm(kcm_df, expression_strings=None, expression_boundaries=Non
             break
             
         # Following the seeds, take each selected seed and greedily expand the rectangle
+        # Following the seeds, take each selected seed and greedily expand the rectangle
         possible_rectangles = []
+        seen_rectangles = set()  
+
         for i, seed in enumerate(seeds):
             expanded_rect = expand_rectangle_greedily(seed, working_binary_matrix, kcm_df, cube_columns, working_term_id_matrix, expression_strings, expression_boundaries)
             
             if expanded_rect:
-                possible_rectangles.append(expanded_rect)
-        
-        if not possible_rectangles:
-            print("No valid rectangles found in this iteration")
-            break
-            
-        # Select the best rectangle from this iteration
-        best_rectangle = select_best_rectangle(possible_rectangles, kcm_df)
-        
-        if best_rectangle is None:
-            print("No best rectangle selected")
-            break
+                # Create a unique signature for the rectangle
+                rect_signature = (
+                    tuple(sorted(expanded_rect['rows'])),
+                    tuple(str(col) for col in expanded_rect['columns']),
+                    tuple(sorted(expanded_rect['original_term_ids']))
+                )
+                
+                # Only add if not seen before
+                if rect_signature not in seen_rectangles:
+                    seen_rectangles.add(rect_signature)
+                    possible_rectangles.append(expanded_rect)
+                # Select the best rectangle from this iteration
+                best_rectangle = select_best_rectangle(possible_rectangles, kcm_df)
+                
+                if best_rectangle is None:
+                    print("No best rectangle selected")
+                    break
             
         print(f"Selected rectangle covering terms: {best_rectangle['original_term_ids']}")
         selected_rectangles.append(best_rectangle)
@@ -1386,7 +1394,7 @@ def parse_kcm_to_binary(kcm_df, cube_columns):
 
 
 # I dentidy rows and columns that should be further processed
-def generate_distill_seeds(binary_matrix):
+def generate_distill_seeds(binary_matrix, seed_num):
 
     num_rows, num_cols = binary_matrix.shape
     seeds = []
@@ -1422,7 +1430,7 @@ def generate_distill_seeds(binary_matrix):
     
     # Sort seeds by activity and select the top 10
     seeds.sort(key=lambda x: x['activity'], reverse=True)
-    selected_seeds = seeds[:15]
+    selected_seeds = seeds[:seed_num]
     
     print("Selected: ", len(selected_seeds), "out of", len(seeds))
 
@@ -1449,24 +1457,59 @@ def expand_rectangle_greedily(seed, binary_matrix, kcm_df, cube_columns, term_id
         improved = False
         iteration += 1
         
+        # First, collect all term IDs currently in the rectangle
+        current_term_ids = set()
+        for row in current_rows:
+            for col in current_cols:
+                term_ids = term_id_matrix.get((row, col), [])
+                if isinstance(term_ids, list):
+                    current_term_ids.update(term_ids)
+                else:
+                    if term_ids:
+                        current_term_ids.add(term_ids)
+        
         # Tries to expand the rows by finding rows that have 1 in all the current columns
         for test_row in range(num_rows):
             if test_row not in current_rows:
-
+                # Check if all current columns have 1s in this row
                 if all(binary_matrix[test_row][col] == 1 for col in current_cols):
-                    current_rows.append(test_row)
-                    improved = True
-                    break
+                    # NEW: Check if this row would add any already-covered terms
+                    new_term_ids = set()
+                    for col in current_cols:
+                        term_ids = term_id_matrix.get((test_row, col), [])
+                        if isinstance(term_ids, list):
+                            new_term_ids.update(term_ids)
+                        else:
+                            if term_ids:
+                                new_term_ids.add(term_ids)
+                    
+                    # Only add row if it brings different terms
+                    if not new_term_ids.intersection(current_term_ids):
+                        current_rows.append(test_row)
+                        improved = True
+                        break
         
         # Tries to do the same thing with the columns
         for test_col in range(num_cols):
             if test_col not in current_cols:
-
+                # Check if all current rows have 1s in this column
                 if all(binary_matrix[row][test_col] == 1 for row in current_rows):
-                    current_cols.append(test_col)
-                    improved = True
-                    break
-    
+                    # NEW: Check if this column would add any already-covered terms
+                    new_term_ids = set()
+                    for row in current_rows:
+                        term_ids = term_id_matrix.get((row, test_col), [])
+                        if isinstance(term_ids, list):
+                            new_term_ids.update(term_ids)
+                        else:
+                            if term_ids:
+                                new_term_ids.add(term_ids)
+                    
+                    # Only add column if it brings different terms
+                    if not new_term_ids.intersection(current_term_ids):
+                        current_cols.append(test_col)
+                        improved = True
+                        break
+        
     # Check that the rectangle spans at least 1 row and 2 columns
     if len(current_rows) > 0 and len(current_cols) > 1:
 
@@ -1603,16 +1646,14 @@ def calculate_rectangle_cost(rect, kcm_df):
     
 
     # Construct the factored part of the expression: co kernel * kernel
-    factored_parts = []
-    
-    for row_index in rect['rows']:
-
-        # Fetch cokernel from the KCM df
+    # Build the factored part of the expression
+    if len(rect['rows']) == 1:
+        # Single cokernel case - keep existing logic
+        row_index = rect['rows'][0]
         cokernel = kcm_df.iloc[row_index]['cokernel']
         
         # The cubes that make up the kernel
         kernel_cubes = list(rect['columns'])
-   
         
         # Combine the cubes
         if len(kernel_cubes) == 1:
@@ -1625,14 +1666,40 @@ def calculate_rectangle_cost(rect, kcm_df):
                 else:
                     kernel = Addition(kernel, cube)
         
-
         # Create the multiplication
         if type(cokernel) == Constant and cokernel.value == 1:
             factored_part = kernel
         else:
             factored_part = Multiplication(cokernel, kernel)
         
-        factored_parts.append(factored_part)
+        factored_parts = [factored_part]
+    else:
+        # Multiple cokernels - factor as (cokernel1 + cokernel2 + ...) * kernel
+        cokernels = [kcm_df.iloc[row_idx]['cokernel'] for row_idx in rect['rows']]
+        
+        # Combine cokernels
+        combined_cokernel = cokernels[0]
+        for ck in cokernels[1:]:
+            if type(ck) == UnaryMinus:
+                combined_cokernel = Subtraction(combined_cokernel, ck.value)
+            else:
+                combined_cokernel = Addition(combined_cokernel, ck)
+        
+        # Build kernel from columns
+        kernel_cubes = list(rect['columns'])
+        if len(kernel_cubes) == 1:
+            kernel = kernel_cubes[0]
+        else:
+            kernel = kernel_cubes[0]
+            for cube in kernel_cubes[1:]:
+                if type(cube) == UnaryMinus:
+                    kernel = Subtraction(kernel, cube.value)
+                else:
+                    kernel = Addition(kernel, cube)
+        
+        # Create (combined_cokernel) * kernel
+        factored_part = Multiplication(combined_cokernel, kernel)
+        factored_parts = [factored_part]
     
 
     # Build the complete expression by combining the factored and unfactored parts
@@ -1836,10 +1903,9 @@ def update_expressions_with_extracted_function(all_expressions, analysable_expre
 
     # Add factored part
     cokernels = best_rect['cokernels']
-    if cokernels:
+    if len(cokernels) == 1:
+        # Single cokernel case
         cokernel = cokernels[0]
-        
-        # Create function term
         function_term = Function(extracted_function.name)
         
         if type(cokernel) == UnaryMinus:
@@ -1848,6 +1914,18 @@ def update_expressions_with_extracted_function(all_expressions, analysable_expre
         else:
             factored_part = Multiplication(cokernel, function_term)
         
+        new_parts.append(factored_part)
+    else:
+        # Multiple cokernels - combine them
+        combined_cokernel = cokernels[0]
+        for ck in cokernels[1:]:
+            if type(ck) == UnaryMinus:
+                combined_cokernel = Subtraction(combined_cokernel, ck.value)
+            else:
+                combined_cokernel = Addition(combined_cokernel, ck)
+        
+        function_term = Function(extracted_function.name)
+        factored_part = Multiplication(combined_cokernel, function_term)
         new_parts.append(factored_part)
 
     # Build the new expression
@@ -1947,7 +2025,7 @@ def remove_covered_terms(binary_matrix, term_id_matrix, selected_rectangle):
 
 
 
-def greedy_kernel_intersection_algorithm(expression_strings):
+def greedy_kernel_intersection_algorithm(expression_strings, seed_num):
 
     print("Greedy Kernel Intersection Algorithm with Distill")
     print("=" * 60)
@@ -2000,7 +2078,7 @@ def greedy_kernel_intersection_algorithm(expression_strings):
         
 
         # Find all best rectangles from this KCM
-        selected_rectangles = distill_algorithm(kcm_matrix, analysable_expressions, expression_boundaries)
+        selected_rectangles = distill_algorithm(kcm_matrix, analysable_expressions, expression_boundaries, seed_num)
 
         if not selected_rectangles:
             print("No rectangles found")
@@ -2085,16 +2163,20 @@ def update_expressions_with_all_functions(all_expressions, analysable_expression
         used_term_indices = set()
         
         # Process each function/rectangle pair
+        # Process each function/rectangle pair
         for extracted_function, best_rect in function_rect_pairs:
-            cokernel = best_rect['cokernels'][0]
+            cokernels = best_rect['cokernels']
             
-            # Find terms that this cokernel can factor
+            # For multiple cokernels, we need to check if terms can be factored by ANY of them
             factored_indices = []
             for i, term in enumerate(all_terms):
-                if i not in used_term_indices:  # Don't double-factor terms
-                    factored_result = try_factorising(term, cokernel)
-                    if factored_result is not None:
-                        factored_indices.append(i)
+                if i not in used_term_indices:
+                    # Check if this term can be factored by any cokernel
+                    for cokernel in cokernels:
+                        factored_result = try_factorising(term, cokernel)
+                        if factored_result is not None:
+                            factored_indices.append(i)
+                            break
             
             if factored_indices:
                 # Mark these terms as used
@@ -2102,14 +2184,28 @@ def update_expressions_with_all_functions(all_expressions, analysable_expression
                 
                 # Create the factored part
                 function_term = Function(extracted_function.name)
-                if isinstance(cokernel, UnaryMinus):
-                    multiplication = Multiplication(cokernel.value, function_term)
-                    factored_part = UnaryMinus(multiplication)
+                
+                if len(cokernels) == 1:
+                    # Single cokernel
+                    cokernel = cokernels[0]
+                    if isinstance(cokernel, UnaryMinus):
+                        multiplication = Multiplication(cokernel.value, function_term)
+                        factored_part = UnaryMinus(multiplication)
+                    else:
+                        factored_part = Multiplication(cokernel, function_term)
                 else:
-                    factored_part = Multiplication(cokernel, function_term)
+                    # Multiple cokernels - combine them
+                    combined_cokernel = cokernels[0]
+                    for ck in cokernels[1:]:
+                        if isinstance(ck, UnaryMinus):
+                            combined_cokernel = Subtraction(combined_cokernel, ck.value)
+                        else:
+                            combined_cokernel = Addition(combined_cokernel, ck)
+                    
+                    factored_part = Multiplication(combined_cokernel, function_term)
                 
                 new_parts.append(factored_part)
-                print(f"Factored terms {factored_indices} with {cokernel} * {extracted_function.name}")
+                print(f"Factored terms {factored_indices} with ({' + '.join(str(c) for c in cokernels)}) * {extracted_function.name}")
         
         # Add remaining unfactored terms
         for i, term in enumerate(all_terms):
@@ -2150,13 +2246,14 @@ def update_expressions_with_all_functions(all_expressions, analysable_expression
 
 
 
-def optimise_polynomial(expression_str):
+def optimise_polynomial(expression_str, seed_num):
     print("COMPLETE POLYNOMIAL OPTIMISATION")
     print("=" * 15)
     print("Expression: ",  expression_str)
     
     extracted_functions, final_expressions = greedy_kernel_intersection_algorithm(
-        expression_strings=[expression_str]
+        expression_strings=[expression_str],
+        seed_num = seed_num
     )
     
    

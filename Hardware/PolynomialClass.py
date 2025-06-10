@@ -1,4 +1,3 @@
-
 class PolynomialTerm:
     def __hash__(self):
         return hash(str(self))
@@ -22,7 +21,7 @@ class PolynomialTerm:
         return hash(str(self))  
     
     def __eq__(self, other):
-        if not isinstance(other, PolynomialTerm):
+        if type(other) != PolynomialTerm:
             return False
         return str(self) == str(other)  
 
@@ -34,16 +33,19 @@ class Variable(PolynomialTerm):
         return True
     
     def __pow__(self, exponent):
-        if isinstance(exponent, Constant):
+        if type(exponent) == Constant:
             return Power(self, exponent)
-        elif isinstance(exponent, (int, float)):
+        elif type(exponent) in (int, float):
             return Power(self, Constant(exponent))
+    
+    def __repr__(self):
+        return f"Variable('{self.value}')"
         
     def __hash__(self):
         return hash(self.value)
     
     def __eq__(self, other):
-        if not isinstance(other, Variable):
+        if type(other) != Variable:
             return False
         return self.value == other.value
     
@@ -60,7 +62,6 @@ class Variable(PolynomialTerm):
         return self.value >= other.value
        
 
-
 class Constant(PolynomialTerm):
     def __init__(self, value):
         self.value = float(value)
@@ -68,8 +69,11 @@ class Constant(PolynomialTerm):
     def is_number(self):
         return True
     
+    def __repr__(self):
+        return f"Constant({self.value})"
+    
     def __eq__(self, second):
-        if isinstance(second, Constant):
+        if type(second) == Constant:
             return abs(self.value - second.value) < 1e-10 
         return abs(self.value - second) < 1e-10
         
@@ -78,17 +82,15 @@ class Constant(PolynomialTerm):
         return self.value == int(self.value)
         
     def __gt__(self, second):
-        if isinstance(second, Constant):
+        if type(second) == Constant:
             return self.value > second.value
         return self.value > second
         
-
-    
     def __hash__(self):
         return hash(self.value)
     
     def __mod__(self, other):
-        if isinstance(other, Constant):
+        if type(other) == Constant:
             return Constant(self.value % other.value)
         return Constant(self.value % other)
 
@@ -96,7 +98,7 @@ class Constant(PolynomialTerm):
         return Constant(other % self.value)
     
     def __sub__(self, other):
-        if isinstance(other, Constant):
+        if type(other) == Constant:
             return Constant(self.value - other.value)
         return Constant(self.value - other)
 
@@ -104,12 +106,12 @@ class Constant(PolynomialTerm):
         return Constant(other - self.value)
     
     def __pow__(self, exponent):
-        if isinstance(exponent, Constant):
+        if type(exponent) == Constant:
             return Constant(self.value ** exponent.value)
         return Constant(self.value ** exponent)
     
     def __floordiv__(self, other):
-        if isinstance(other, Constant):
+        if type(other) == Constant:
             return Constant(self.value // other.value)
         return Constant(self.value // other)
 
@@ -131,10 +133,16 @@ class Addition(BinaryOperation):
     def __str__(self):
         return f"{self.left} + {self.right}"
     
+    def __repr__(self):
+        return f"Addition({repr(self.left)}, {repr(self.right)})"
+    
 
 class Subtraction(BinaryOperation):
     def __str__(self):
         return f"{self.left} - {self.right}"
+    
+    def __repr__(self):
+        return f"Subtraction({repr(self.left)}, {repr(self.right)})"
     
 
 class Multiplication(BinaryOperation):
@@ -143,23 +151,29 @@ class Multiplication(BinaryOperation):
         left_str = str(self.left)
         right_str = str(self.right)
 
-        if isinstance(self.left, (Addition, Subtraction)):
+        if type(self.left) in (Addition, Subtraction):
             left_str = f"({left_str})"
             
-        if isinstance(self.right, (Addition, Subtraction)):
+        if type(self.right) in (Addition, Subtraction):
             right_str = f"({right_str})"
             
         return f"{left_str} * {right_str}"
+    
+    def __repr__(self):
+        return f"Multiplication({repr(self.left)}, {repr(self.right)})"
     
 
 class Power(BinaryOperation):
     def __str__(self):
         # Adds parentheses around the base for clarity
         left_str = str(self.left)
-        if isinstance(self.left, (Addition, Subtraction, Multiplication)):
+        if type(self.left) in (Addition, Subtraction, Multiplication):
             left_str = f"({left_str})"
             
         return f"{left_str}^{self.right}"
+    
+    def __repr__(self):
+        return f"Power({repr(self.left)}, {repr(self.right)})"
     
 
 class UnaryMinus(PolynomialTerm):
@@ -168,9 +182,12 @@ class UnaryMinus(PolynomialTerm):
     
     def __str__(self):
         term_str = str(self.value)
-        if isinstance(self.value, (Addition, Subtraction, Multiplication)):
+        if type(self.value) in (Addition, Subtraction, Multiplication):
             term_str = f"({term_str})"
         return f"-{term_str}"
+    
+    def __repr__(self):
+        return f"UnaryMinus({repr(self.value)})"
     
     def is_number(self):
         return self.value.is_number() if hasattr(self.value, 'is_number') else False
@@ -335,14 +352,52 @@ class PolynomialParser:
         if node is None:
             node = self.expr_tree
 
-        if isinstance(node, Variable):
+        if type(node) == Variable:
             variables.add(node)
 
-        elif isinstance(node, (Addition, Subtraction, Multiplication, Power)):
+        elif type(node) in (Addition, Subtraction, Multiplication, Power):
             self.find_variables(node.left, variables)
             self.find_variables(node.right, variables)
             
-        elif isinstance(node, UnaryMinus):
+        elif type(node) == UnaryMinus:
             self.find_variables(node.value, variables)
     
         return variables
+    
+    def print_tree(self, node=None, indent=0, prefix=""):
+        """Print the polynomial tree structure"""
+        if node is None:
+            node = self.expr_tree
+        
+        if node is None:
+            return
+        
+        print("  " * indent + prefix + str(type(node).__name__) + f": {node}")
+        
+        if type(node) in (Addition, Subtraction, Multiplication, Power):
+            self.print_tree(node.left, indent + 1, "├─ left: ")
+            self.print_tree(node.right, indent + 1, "└─ right: ")
+        elif type(node) == UnaryMinus:
+            self.print_tree(node.value, indent + 1, "└─ value: ")
+    
+    def get_class_structure(self, node=None):
+        """Return a string representation of the class structure"""
+        if node is None:
+            node = self.expr_tree
+        
+        if type(node) == Variable:
+            return f"Variable('{node.value}')"
+        elif type(node) == Constant:
+            return f"Constant({node.value})"
+        elif type(node) == Addition:
+            return f"Addition({self.get_class_structure(node.left)}, {self.get_class_structure(node.right)})"
+        elif type(node) == Subtraction:
+            return f"Subtraction({self.get_class_structure(node.left)}, {self.get_class_structure(node.right)})"
+        elif type(node) == Multiplication:
+            return f"Multiplication({self.get_class_structure(node.left)}, {self.get_class_structure(node.right)})"
+        elif type(node) == Power:
+            return f"Power({self.get_class_structure(node.left)}, {self.get_class_structure(node.right)})"
+        elif type(node) == UnaryMinus:
+            return f"UnaryMinus({self.get_class_structure(node.value)})"
+        else:
+            return str(node)

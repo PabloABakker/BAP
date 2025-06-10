@@ -247,7 +247,7 @@ class GenerateTree:
             pos = self.custom_layout(new_levels)
 
         if display:
-            plt.figure(figsize=(35, 25))
+            plt.figure(figsize=(11, 10))
             
             #Divide up the nodes
             operation_nodes = [n for n in graph.nodes() if graph.nodes[n]['type'] == 'operation']
@@ -286,18 +286,20 @@ class GenerateTree:
             labels = {}
             for node in graph.nodes():
                 attr_value = graph.nodes[node]['label']
-                labels[node] = f"{node}: {attr_value}"
-                #labels[node] = f"{attr_value}"
+                # labels[node] = f"{node}: {attr_value}"
+                labels[node] = f"{attr_value}"
             
             graph_labels = nx.draw_networkx_labels(graph, pos, labels=labels, font_size=14, font_weight='bold')
             for text in graph_labels.values():
                 text.set_zorder(3)  # labels on top
 
-            # plt.title(f"Node Graph for: ${(polynomial_str.replace('**', '^')).replace('*', '')}$", fontsize=16)
+            plt.title(f"Data Flow Graph of: ${(polynomial_str.replace('**', '^')).replace('*', '')}$", fontsize=16)
 
-            plt.title(f"Node Graph for", fontsize=16)
+            # plt.title(f"Node Graph for", fontsize=16)
+
             plt.axis('off')
             plt.tight_layout()
+            # plt.savefig("DSPExampleUnordered.svg")
             plt.show() 
 
 
@@ -400,13 +402,13 @@ class GenerateTree:
                     
             else:
                 if(num_nodes == 1):
-                    x_start =  random.uniform(-0.2 * max_span, 0.2 * max_span)
+                    x_start =  random.uniform(-0.4 * max_span, 0.4 * max_span)
                 else:
                     span = (num_nodes - 1) * (max_span/num_nodes)
                     x_start = - span / 2
                     
                 for i, node in enumerate(sorted(nodes)):
-                    x = x_start + i * (max_span/num_nodes) + random.uniform(-0.02 * max_span, 0.02 * max_span)
+                    x = x_start + i * (max_span/num_nodes) + random.uniform(-0.05 * max_span, 0.1 * max_span)
                     y = max_level - level
                     pos[node] = (x, y)     
         
@@ -575,7 +577,7 @@ class DSPSolver:
             if valid_combo:
                 if G.nodes[combo[0]]['label'] == '+':
                     edges_in = list(G.in_edges(combo[1]))
-                    if G.nodes[combo[1]]['label'] == '*' and len(edges_in[0]) < 2:
+                    if G.nodes[combo[1]]['label'] == '*':
                         valid_combo = False
 
             if valid_combo:
@@ -791,8 +793,12 @@ def implement_bit_shifts(G):
             for edge in child_edges:
                 child_node = edge[1]
                 edge_data = edge[2]
-                child_edge_label = edge_data.get('label', None)
+                child_edge_label = edge_data['label']
                 child_connections.append((child_node, child_edge_label))
+
+            # If this multiplication has no children (is at root), add a None placeholder
+            if not child_connections:
+                child_connections.append((None, None))
 
             if float(val) > 0:
                 if math.log2(float(val)).is_integer():
@@ -1012,7 +1018,7 @@ def add_postadder_shift_nodes(G, frac_bit_num, dsp_combos, adjusted_levels):
             # The shifted result is needed right after and so all nodes need to be moved one down
             if abs(adjusted_levels[edge[0]] - adjusted_levels[edge[1]]) == 1:
                 # Find the DSP matches that are on the same level
-                dsp_matched = [sublist for sublist in dsp_combos if any(adjusted_levels.get(x) == adjusted_levels[edge[1]] for x in sublist)]
+                dsp_matched = [sublist for sublist in dsp_combos if any(adjusted_levels[x] == adjusted_levels[edge[1]] for x in sublist)]
                 dsp_matched = [item for sublist in dsp_matched for item in sublist]
                 # print(dsp_matched)
                 # print("Shifted result is needed right after")
@@ -1327,7 +1333,7 @@ def get_all_dsp_input_nodes(dsp_combo, G):
                 continue
                 
             # Handle shift nodes - look through them to find actual input
-            if G.nodes[pred].get('type') == 'shift':
+            if G.nodes[pred]['type'] == 'shift':
                 # Add the nodes that feed into the shift
                 for shift_input in G.predecessors(pred):
                     if shift_input not in dsp_combo:
@@ -1355,7 +1361,7 @@ def validate_final_schedule(G, levels, dsp_combos):
             input_combo = find_dsp_combo_containing_node(input_node, dsp_combos)
             
             if input_combo:
-                input_completion = max(levels[n] for n in input_combo if n in levels)
+                input_completion = max(levels[n] for n in input_combo)
             else:
                 input_completion = levels[input_node]
             
@@ -1367,8 +1373,8 @@ def validate_final_schedule(G, levels, dsp_combos):
         print("TIMING VIOLATIONS FOUND")
         for v in violations:
             print(f"{v}")
-    else:
-        print("No timing violations found")
+    # else:
+    #     print("No timing violations found")
     
     return violations
 
@@ -1647,69 +1653,152 @@ def find_dsp_start_levels(dsp_combos, node_levels, level_a, level_b):
 
 
 
-def add_registers(G, node_levels, dsp_combos):
 
-    registers_dict = {}
-    # Accumulate all edges going from one node to another
-    all_edges = []
-    for node in G.nodes():
-        all_edges.extend(list(G.out_edges(node)))
+def add_registers(G, node_levels, dsp_combos, unroll):
 
-    # Find the level each node is on
-    for edge in all_edges:
-        # Only look at non consecutive nodes and edges that are not in the same dsp combo
-        if node_levels[edge[1]] - node_levels[edge[0]] > 1 and not any(edge[0] in combo and edge[1] in combo for combo in dsp_combos):
-            # print(edge[0], edge[1])
-                       
-            # Find the level of the first node in the node's dsp combo which the end edge belongs to
-            in_combo = [combo for combo in dsp_combos if edge[1] in combo]
-            # print("In combo; ", in_combo)
-            if in_combo:
-                last_level = in_combo[0][0]
-            else:
-                last_level = edge[1]
-            # print("The needed level: ", last_level)
-
-            # print(with_register_levels[edge[0]], with_register_levels[edge[1]])
-
-            needed_registers = find_dsp_start_levels(dsp_combos, node_levels, node_levels[edge[0]], node_levels[last_level])
-            registers_dict[(edge[0], edge[1])] = needed_registers
-
+    # Collect all edges that need registers
+    register_edges = []
+    
+    for edge in G.edges():
+        source, target = edge
+        
+        # Skip edges within DSP combos and edges that don't need registers
+        if (node_levels[target] - node_levels[source] <= 1 or 
+            any(source in combo and target in combo for combo in dsp_combos)):
+            continue
+            
+        # Find target start level
+        target_combo = next((combo for combo in dsp_combos if target in combo), None)
+        if target_combo:
+            target_start_level = node_levels[target_combo[0]]
+        else:
+            target_start_level = node_levels[target]
+        
+        # Get required register levels
+        needed_levels = find_dsp_start_levels(dsp_combos, node_levels, node_levels[source], target_start_level)
+        
+        if needed_levels:
+            edge_data = G.get_edge_data(source, target)
+            edge_label = edge_data['label'] if edge_data else None
+            
+            register_edges.append({
+                'source': source,
+                'target': target,
+                'edge_label': edge_label,
+                'needed_levels': needed_levels,
+                'target_start_level': target_start_level
+            })
+    
+    # Remove original edges that will be replaced
+    for edge_info in register_edges:
+        G.remove_edge(edge_info['source'], edge_info['target'])
+    
+    # Group register requirements by source node
+    source_groups = {}
+    for edge_info in register_edges:
+        source = edge_info['source']
+        if source not in source_groups:
+            source_groups[source] = []
+        source_groups[source].append(edge_info)
+    
+    # Create optimized register structure
     max_node = max(G.nodes()) + 1
-    # print("MAX NODE IS: ", max_node)
-    for item, values in registers_dict.items():
-        if values:
-            edge_label = G.get_edge_data(item[0], item[1])
-            if edge_label:
-                edge_label = edge_label['label']
-            else:
-                edge_label = None
-
-            # print(edge_label)
-            G.remove_edge(item[0], item[1])
-
-            prev_node = item[0]
-            for val in values:
-                
-                G.add_node(max_node, label = "R", type = "register")
-                G.add_edge(prev_node, max_node)
-
-                node_levels[max_node] = val
-                prev_node = max_node
-                max_node += 1
-                
-                # print(item)
-            # print("Edge to add: ", prev_node, item[1])
-            if edge_label is not None:
-                G.add_edge(prev_node, item[1], label = edge_label)
-            else:
-                G.add_edge(prev_node, item[1])
-
-    # print(registers_dict)
-    # print(all_edges)
+    
+    for source_node, edge_infos in source_groups.items():
+        # Find all unique levels needed from this source
+        all_levels = set()
+        for edge_info in edge_infos:
+            all_levels.update(edge_info['needed_levels'])
+        sorted_levels = sorted(all_levels)
+        
+        # Build register chain - one register per level
+        register_chain = {}
+        prev_node = source_node
+        
+        for level in sorted_levels:
+            reg_node = max_node
+            G.add_node(reg_node, label="1", type="register")
+            G.add_edge(prev_node, reg_node)
+            node_levels[reg_node] = level
+            register_chain[level] = reg_node
+            prev_node = reg_node
+            max_node += 1
+        
+        # Connect to targets from appropriate register levels
+        for edge_info in edge_infos:
+            target = edge_info['target']
+            edge_label = edge_info['edge_label']
+            max_needed_level = max(edge_info['needed_levels'])
+            
+            # Connect from the register at the highest needed level
+            if max_needed_level in register_chain:
+                reg_node = register_chain[max_needed_level]
+                if edge_label:
+                    G.add_edge(reg_node, target, label=edge_label)
+                else:
+                    G.add_edge(reg_node, target)
+    
+    if not unroll:
+        merge_consecutive_registers(G, node_levels)
+    
     return G, node_levels
 
 
+def merge_consecutive_registers(G, node_levels):
+    
+    register_nodes = [node for node in G.nodes() if G.nodes[node]['type'] == 'register']
+    processed = set()
+    
+    for reg_node in register_nodes:
+        if reg_node in processed or reg_node not in G.nodes():
+            continue
+            
+        chain = [reg_node]
+        current = reg_node
+        
+        while True:
+            successors = list(G.successors(current))
+            
+            # Stop if not one successor or successor isnt a register
+            if (len(successors) != 1 or 
+                successors[0] not in G.nodes() or 
+                G.nodes[successors[0]]['type'] != 'register'):
+                break
+                
+            next_reg = successors[0]
+            chain.append(next_reg)
+            current = next_reg
+        
+        # Merge chain if has multiple registers
+        if len(chain) > 1:
+            first_reg = chain[0]
+            last_reg = chain[-1]
+            
+            # total register count
+            total_count = len(chain)
+            
+            G.nodes[first_reg]['label'] = f"{total_count}"
+            node_levels[first_reg] = node_levels[last_reg]
+            
+            final_edges_data = []
+            for target in G.successors(last_reg):
+                edge_data = G.get_edge_data(last_reg, target)
+                final_edges_data.append((target, edge_data))
+
+            # Remove inter registers
+            for reg in chain[1:]:
+                G.remove_node(reg)
+                node_levels.pop(reg, None)
+                processed.add(reg)
+
+            # Connect first register to final targets using collected data
+            for target, edge_data in final_edges_data:
+                if edge_data and 'label' in edge_data:
+                    G.add_edge(first_reg, target, label=edge_data['label'])
+                else:
+                    G.add_edge(first_reg, target)
+        
+        processed.add(reg_node)
 
 
 
@@ -1755,13 +1844,16 @@ def GenerateGraph(user_input, frac_bit_num, show_graph):
 
     initial_levels = rearrange_dsps(G_mod, initial_levels, dsp_combos)
 
+    # split_stage_levels = initial_levels
+
     # G_mod, adjusted_levels = add_postadder_shift_nodes(G_mod, frac_bit_num, dsp_combos, initial_levels)
 
     G_mod, split_stage_levels = split_into_dsp_stages(G_mod, initial_levels, dsp_combos)
   
     split_stage_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
 
-    # G_mod, split_stage_levels = add_registers(G_mod, split_stage_levels, dsp_combos)
+    G_mod, split_stage_levels = add_registers(G_mod, split_stage_levels, dsp_combos, unroll = False)
+    
 
     GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = show_graph)
 
@@ -1776,7 +1868,7 @@ def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph, quantised, b_po
     G = nx.DiGraph()
     node_id, root_id = process_expression(poly.expr_tree, G, 0)
 
-    GenerateTree(G, user_input, display = True)
+    # GenerateTree(G, user_input, display = True)
 
     #G_mod = merge_negatives(G)
     G_mod = implement_bit_shifts(G)
@@ -1796,11 +1888,11 @@ def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph, quantised, b_po
   
     split_stage_levels = isolate_shift_nodes(G_mod, split_stage_levels, dsp_combos)
 
-    GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = True)
+    # GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = True)
 
 
     if quantised:
-        print("IT is quantised")
+        print("It is quantised")
 
         if frac_bit_num > 0:
             frac_bits = frac_bit_num - b_port_shifts
@@ -1812,8 +1904,6 @@ def GeneratePrecisionGraph(user_input, frac_bit_num, show_graph, quantised, b_po
     GenerateTree(G_mod, user_input, specific_node_colors= make_color_assignments(dsp_combos), provided_levels = split_stage_levels, display = show_graph)
 
     return G_mod, dsp_combos, split_stage_levels
-
-
 
 
 
