@@ -1,0 +1,308 @@
+[
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 0,
+    "best_reward": -0.11869157629780602,
+    "mean_reward": -299.46743901643777,
+    "std_reward": 334.2780907534283,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed0\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed0\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 1,
+    "best_reward": -0.11763123968921718,
+    "mean_reward": -236.5081531994544,
+    "std_reward": 290.1745353231016,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed1\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed1\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 2,
+    "best_reward": -0.029026136644461076,
+    "mean_reward": -245.00016876006393,
+    "std_reward": 287.13830252217423,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed2\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed2\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 0,
+    "best_reward": -0.4613506209134357,
+    "mean_reward": -271.8959279171538,
+    "std_reward": 293.08764705898955,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed0\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed0\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 1,
+    "best_reward": -0.24225435956032015,
+    "mean_reward": -243.60615480545675,
+    "std_reward": 284.22952637008655,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed1\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed1\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 2,
+    "best_reward": -0.027035530609282432,
+    "mean_reward": -251.23508181815745,
+    "std_reward": 278.44396460910014,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed2\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed2\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.0001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 0,
+    "best_reward": -0.12845658550213557,
+    "mean_reward": -631.3553018159674,
+    "std_reward": 447.5281507695087,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed0\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed0\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.0001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 1,
+    "best_reward": -0.033170213870107546,
+    "mean_reward": -566.4628122925893,
+    "std_reward": 481.659987107584,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed1\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed1\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.0001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 2,
+    "best_reward": -0.34086717781610787,
+    "mean_reward": -698.3052050219427,
+    "std_reward": 458.5563920274784,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed2\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed2\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.0001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 0,
+    "best_reward": -0.057951515320212366,
+    "mean_reward": -663.9662544358345,
+    "std_reward": 461.37104345020276,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed0\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed0\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.0001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 1,
+    "best_reward": -0.11766566928235989,
+    "mean_reward": -615.7654716707372,
+    "std_reward": 484.9397831447424,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed1\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed1\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 0.0001,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 2,
+    "best_reward": -0.45592937889159657,
+    "mean_reward": -689.4828206159099,
+    "std_reward": 493.3264771341469,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed2\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate0.0001_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed2\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 1e-05,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 0,
+    "best_reward": -627.7720755059272,
+    "mean_reward": -1236.3418451075963,
+    "std_reward": 331.01184186402713,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed0\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed0\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 1e-05,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 1,
+    "best_reward": -634.852936510928,
+    "mean_reward": -1295.4889364914875,
+    "std_reward": 335.44012958623625,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed1\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed1\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 1e-05,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.001
+    },
+    "seed": 2,
+    "best_reward": -627.0767901837826,
+    "mean_reward": -1291.0624196515419,
+    "std_reward": 312.65194672117184,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed2\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed2\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 1e-05,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 0,
+    "best_reward": -626.5085631432012,
+    "mean_reward": -1249.8062702781351,
+    "std_reward": 329.96616480929987,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed0\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed0\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 1e-05,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 1,
+    "best_reward": -513.9088091916783,
+    "mean_reward": -1256.8031621869961,
+    "std_reward": 327.8160272573895,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed1\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed1\\vecnormalize.pkl"
+  },
+  {
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "config": {
+      "learning_rate": 1e-05,
+      "gamma": 0.99,
+      "batch_size": 256,
+      "n_steps": 1024,
+      "ent_coef": 0.01
+    },
+    "seed": 2,
+    "best_reward": -504.4621717708651,
+    "mean_reward": -1313.4443180487845,
+    "std_reward": 290.6493464784652,
+    "model_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed2\\final_model.zip",
+    "vecnorm_path": "models\\PPO_Pendulum-v1_learning_rate1e-05_gamma0.99_batch_size256_n_steps1024_ent_coef0.01_seed2\\vecnormalize.pkl"
+  }
+]

@@ -1,0 +1,32 @@
+{
+    "algo": "ppo",
+    "env_id": "Pendulum-v1",
+    "model_path": "C:\\Users\\pablo\\OneDrive\\Bureaublad\\Python\\Machine learning\\BAP_TOTAL\\Bap_self\\BAP\\Sparse_learning_algorithmn\\RL\\models\\PPO_Pendulum-v1_learning_rate0.001_gamma0.99_batch_size256_n_steps1024_ent_coef0.001_seed1\\final_model.zip",
+    "mean_reward": -119.45718910950237,
+    "std_reward": 74.51635497366513,
+    "n_episodes": 10,
+    "episode_rewards": [
+        -1.7693903152830899,
+        -241.61174171464518,
+        -120.14359995676205,
+        -119.11646478949115,
+        -2.207972176373005,
+        -117.75092959962785,
+        -123.03574920725077,
+        -119.82750269817188,
+        -233.37400124501437,
+        -115.73453939240426
+    ],
+    "episode_lengths": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+    ]
+}

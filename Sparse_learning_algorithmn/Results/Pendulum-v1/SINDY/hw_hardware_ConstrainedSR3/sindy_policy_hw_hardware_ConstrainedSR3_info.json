@@ -1,0 +1,1 @@
+{"mse": 0.1946303823182541, "mse_qat": 0.19782402600819268, "params": {"threshold": 10.0, "alpha": 1e-05}, "Nonzero count": 109}
