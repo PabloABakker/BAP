@@ -47,6 +47,26 @@ def twos_complement_to_int(val_str):
     return val                        
 
 
+def float_to_fixed_bin(value, total_bits, frac_bits):
+    scale = 2 ** frac_bits
+    max_val = 2 ** (total_bits - 1) - 1
+    min_val = -2 ** (total_bits - 1)
+
+    scaled = int(round(value * scale))
+
+    if scaled > max_val:
+        scaled = max_val
+    elif scaled < min_val:
+        scaled = min_val
+
+    if scaled < 0:
+        scaled = (1 << total_bits) + scaled
+
+    bin_str = format(scaled, f'0{total_bits}b')
+    return bin_str
+
+
+
 def int_to_twos_complement(num, bits):
 
     if num >= 0:
@@ -80,7 +100,6 @@ def dsp_mult(a, b):
     product_bits = len(a) + len(b)
     product_bin = int_to_twos_complement(product, product_bits)
     
-    # #print(f"Product bits before truncation: {len(product_bin)}")
 
     if len(product_bin) < 48:
         sign_bit = product_bin[0]
@@ -90,7 +109,6 @@ def dsp_mult(a, b):
     if len(product_bin) > 48:
         product_bin = product_bin[-48:]  
     
-    #print(f"Final product bits: {len(product_bin)}")
     return product_bin
 
 
@@ -164,8 +182,8 @@ def calculate_expression(G, new_levels, initial_values, quant_initial_values, ds
     
     
     if quantised:
-        node_results = quant_initial_values  # Binary string results
-        number_node_results = initial_values  # Parallel floating-point tracking
+        node_results = quant_initial_values  
+        number_node_results = initial_values  
     else:
         node_results = initial_values
         number_node_results = {}
@@ -384,11 +402,8 @@ def calculate_expression(G, new_levels, initial_values, quant_initial_values, ds
                 #print(float(calculation))
                 node_results[current_node] = float(calculation)
 
-            #print(node_results)
-            #print(converted_node_results)
-            #print(number_node_results)
 
-    # Display final results
+
     #print("Node result: ", node_results)
 
     if quantised:
@@ -456,18 +471,18 @@ def quantise_dict(value_dict, word_length, n):
 
     quantised_values = {}
     for key, value in value_dict.items():
-        fxp_val = Fxp(value, signed=True, n_word=word_length, n_frac=n)
-        quantised_values[key] = fxp_val.bin()
+        # fxp_val = Fxp(value, signed=True, n_word=word_length, n_frac=n)
+        fxp_val = float_to_fixed_bin(value, word_length, n)
+        quantised_values[key] = fxp_val
 
     return quantised_values
 
 
 
-###---------------------------------------------------------
 
 def calculate_with_dfg(user_input, value_mapping, quant, m, n, b_port_shifts, show_graph):
     word_length = n + m
-    ###----------------------------------------------------
+
     G_mod, dsp_combos, split_stage_levels = GeneratePrecisionGraph(
         user_input, 
         frac_bit_num=n, 
@@ -491,7 +506,10 @@ def calculate_with_dfg(user_input, value_mapping, quant, m, n, b_port_shifts, sh
     )
 
     # calculate reference result 
-    x, y, z = value_mapping['x'], value_mapping['y'], value_mapping['z']
+       # calculate reference result 
+    for key, value in value_mapping.items():
+        locals()[key] = value
+
     result = eval(user_input.replace('^', '**')) 
     #print("Calculation result:", result)
 
@@ -499,17 +517,3 @@ def calculate_with_dfg(user_input, value_mapping, quant, m, n, b_port_shifts, sh
 
 
 
-# user_input = "x^2 + z^2 - x*y"
-
-# # Define variable values
-# value_mapping = {'x': -1.125, 'y': 3.0625, 'z': 5.5}
-
-# quant = True
-# m = 7
-# n = 11
-# # B port shifts cannot be larger than n or 7
-# b_port_shifts = 0
-
-# dfg_val, val = calculate_with_dfg(user_input, value_mapping, True, m, n, b_port_shifts)
-
-# #print(dfg_val, val)
