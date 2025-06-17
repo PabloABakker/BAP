@@ -33,8 +33,7 @@ def extract_terms(node, terms=None):
 
 def try_factorizing(term, co_kernel):
 
-    original_term = term 
-    original_cokernel = co_kernel 
+    # print(term, co_kernel)
 
     if equal_terms(term, co_kernel):
         #print("Equal terms found:", term, co_kernel)
@@ -202,7 +201,7 @@ def equal_terms(term1, term2):
         return term1.name == term2.name
     
     elif type(term1)== Constant:
-        return (abs(term1.value - term2.value) < 1e-10)
+        return (abs(term1.value - term2.value) == 0)
     
     elif type(term1)== Multiplication:
         term1_type = type(term1)
@@ -742,7 +741,7 @@ def find_kernels_cokernels(expression_strs):
     for i, expr_str in enumerate(expression_strs):
         print("Expression: ", expr_str)
 
-    print("=" * 20)
+    print("---------------------")
     
     # Parse all the expressions
     expression_trees = []
@@ -1085,7 +1084,7 @@ def generate_distill_seeds(binary_matrix, seed_num):
             })
             print("Column seed: ", j, linked_rows, col_activity[j])
     
-    # Sort seeds by activity and select the top 10
+    # Sort seeds by activity and select the top 5
     seeds.sort(key=lambda x: x['activity'], reverse=True)
     selected_seeds = seeds[:seed_num]
     
@@ -1113,11 +1112,11 @@ def expand_rectangle_greedily(seed, binary_matrix, kcm_df, cube_columns, term_id
         improved = False
         iteration += 1
         
-        # First, collect all term IDs currently in the rectangle
+        # First collect all term IDs currently in the rectangle
         current_term_ids = set()
         for row in current_rows:
             for col in current_cols:
-                term_ids = term_id_matrix.get((row, col), [])
+                term_ids = term_id_matrix[(row, col)]
                 if type(term_ids) == list:
                     current_term_ids.update(term_ids)
                 else:
@@ -1134,7 +1133,7 @@ def expand_rectangle_greedily(seed, binary_matrix, kcm_df, cube_columns, term_id
 
                     new_term_ids = set()
                     for col in current_cols:
-                        term_ids = term_id_matrix.get((test_row, col), [])
+                        term_ids = term_id_matrix[(test_row, col)]
 
                         if type(term_ids) == list:
                             new_term_ids.update(term_ids)
@@ -1148,7 +1147,7 @@ def expand_rectangle_greedily(seed, binary_matrix, kcm_df, cube_columns, term_id
                         improved = True
                         break
         
-        # Tries to do the same thing with the columns
+        # Try to do the same thing with the columns
         for test_col in range(num_cols):
             if test_col not in current_cols:
 
@@ -1159,7 +1158,7 @@ def expand_rectangle_greedily(seed, binary_matrix, kcm_df, cube_columns, term_id
                     new_term_ids = set()
 
                     for row in current_rows:
-                        term_ids = term_id_matrix.get((row, test_col), [])
+                        term_ids = term_id_matrix[(row, test_col)]
 
                         if type(term_ids) == list:
                             new_term_ids.update(term_ids)
@@ -1394,7 +1393,7 @@ def calculate_rectangle_cost(rect, kcm_df):
         for part in all_parts[1:]:
             if type(part)== UnaryMinus:
                 complete_expression = Subtraction(complete_expression, part.value)
-            elif type(part)== Constant and part.value < 0:  # FIX: Handle negative constants
+            elif type(part)== Constant and part.value < 0: 
                 complete_expression = Subtraction(complete_expression, Constant(abs(part.value)))
             else:
                 complete_expression = Addition(complete_expression, part)
@@ -1420,7 +1419,7 @@ def create_function_from_rectangle(rect, kcm_df, function_name):
     function_expression = None  # Change from [] to None
 
     for cube_name in rect['columns']:
-        if function_expression is None:  # Change condition
+        if function_expression is None: 
             function_expression = cube_name
         else:
             print(cube_name, type(cube_name))
@@ -1442,7 +1441,7 @@ def create_function_from_rectangle(rect, kcm_df, function_name):
         'columns': rect['columns'], 
         'cokernels': rect['cokernels'],
         'cubes': rect['columns'],
-        'optimization_value': rect['cost'],
+        'cost': rect['cost'],
         'original_term_ids': rect['original_term_ids'],
         'reconstructed_expression': rect['reconstructed_expression'],
         'polynomial_expression': function_expression 
@@ -1521,10 +1520,10 @@ def update_expressions_with_extracted_function(all_expressions, analyzable_expre
 
             if '=' in expr:
 
-                func_name, func_body = expr.split('=', 1)
-                func_body = func_body.strip()
+                function_name, function_body = expr.split('=', 1)
+                function_body = function_body.strip()
 
-                if func_body == expr_to_modify:
+                if function_body == expr_to_modify:
                     original_expr_index = i
                     is_function_definition = True
                     break
@@ -1631,9 +1630,9 @@ def update_expressions_with_extracted_function(all_expressions, analyzable_expre
     if is_function_definition:
 
         original_expr = updated_expressions[original_expr_index]
-        func_name = original_expr.split('=')[0].strip()
-        updated_expressions[original_expr_index] = str(func_name) + " = " + str(new_expr_string)
-        print("Updated function definition: ", str(func_name) + " = " + str(new_expr_string))
+        function_name = original_expr.split('=')[0].strip()
+        updated_expressions[original_expr_index] = str(function_name) + " = " + str(new_expr_string)
+        print("Updated function definition: ", str(function_name) + " = " + str(new_expr_string))
     
     else:
         updated_expressions[original_expr_index] = new_expr_string
@@ -1655,7 +1654,7 @@ def remove_covered_terms(binary_matrix, term_id_matrix, selected_rectangle):
     for i in range(num_rows):
         for j in range(num_cols):
             if binary_matrix[i][j] ==1:
-                cell_term_ids = term_id_matrix.get((i, j), [])
+                cell_term_ids = term_id_matrix[(i, j)]
                 
                 if type(cell_term_ids) == list:
                     # Remove covered term IDs
@@ -1664,6 +1663,7 @@ def remove_covered_terms(binary_matrix, term_id_matrix, selected_rectangle):
                     if not remaining_term_ids:
                         binary_matrix[i][j] = 0  # No terms left, remove cell
                         term_id_matrix[(i, j)] = []
+
                     else:
                         term_id_matrix[(i, j)] = remaining_term_ids
 
@@ -1691,7 +1691,7 @@ def greedy_kernel_intersection(expression_strings, seed_num):
             if '=' in expr:
 
                 # The expression is a function
-                func_name, function_expr = expr.split('=', 1)
+                function_name, function_expr = expr.split('=', 1)
                 function_expr = function_expr.strip()
                 
                 parser = PolynomialParser(function_expr)
@@ -1764,10 +1764,13 @@ def update_expressions_with_all_functions(all_expressions, analyzable_expression
     # Group functions by source expression
     functions_by_expression = {}
     for extracted_function, best_rect in created_functions:
+
         expr_id = best_rect['source_expression_id']
 
         if expr_id not in functions_by_expression:
             functions_by_expression[expr_id] = []
+
+        
         functions_by_expression[expr_id].append((extracted_function, best_rect))
     
     updated_expressions = all_expressions.copy()
@@ -1781,17 +1784,21 @@ def update_expressions_with_all_functions(all_expressions, analyzable_expression
         is_function_definition = False
         
         for i, expr in enumerate(updated_expressions):
+
             if expr == expr_to_modify:
                 original_expr_index = i
+
                 is_function_definition = False
                 break
         
         if original_expr_index is None:
             for i, expr in enumerate(updated_expressions):
+
                 if '=' in expr:
-                    func_name, func_body = expr.split('=', 1)
-                    func_body = func_body.strip()
-                    if func_body == expr_to_modify:
+                    function_name, function_body = expr.split('=', 1)
+                    function_body = function_body.strip()
+
+                    if function_body == expr_to_modify:
                         original_expr_index = i
                         is_function_definition = True
                         break
@@ -1810,11 +1817,14 @@ def update_expressions_with_all_functions(all_expressions, analyzable_expression
         # Process each function/rectangle pair
         # Process each function/rectangle pair
         for extracted_function, best_rect in function_rect_pairs:
+
             cokernels = best_rect['cokernels']
             
             # For multiple cokernels need to check if terms can be factored by ANY of them
             factored_indices = []
+
             for i, term in enumerate(all_terms):
+
                 if i not in used_term_indices:
                     # Check if this term can be factored by any cokernel
                     for cokernel in cokernels:
@@ -1836,6 +1846,7 @@ def update_expressions_with_all_functions(all_expressions, analyzable_expression
                     cokernel = cokernels[0]
                     if type(cokernel)== UnaryMinus:
                         multiplication = Multiplication(cokernel.value, function_term)
+
                         factored_part = UnaryMinus(multiplication)
                     else:
                         factored_part = Multiplication(cokernel, function_term)
@@ -1843,8 +1854,10 @@ def update_expressions_with_all_functions(all_expressions, analyzable_expression
                     # Multiple cokernels - combine them
                     combined_cokernel = cokernels[0]
                     for ck in cokernels[1:]:
+
                         if type(ck)== UnaryMinus:
                             combined_cokernel = Subtraction(combined_cokernel, ck.value)
+                       
                         elif type(ck)== Constant and ck.value < 0: 
                             combined_cokernel = Subtraction(combined_cokernel, Constant(abs(ck.value)))
                         
@@ -1879,8 +1892,8 @@ def update_expressions_with_all_functions(all_expressions, analyzable_expression
         # Update the expression
         if is_function_definition:
             original_expr = updated_expressions[original_expr_index]
-            func_name = original_expr.split('=')[0].strip()
-            updated_expressions[original_expr_index] = str(func_name) + "=" + str(new_expr_string)
+            function_name = original_expr.split('=')[0].strip()
+            updated_expressions[original_expr_index] = str(function_name) + "=" + str(new_expr_string)
         else:
             updated_expressions[original_expr_index] = new_expr_string
         
@@ -1931,9 +1944,9 @@ def substitute_and_reconstruct(expression_list):
         if '=' in expr_str:
             
             
-            func_name, func_body = expr_str.split('=', 1)
-            parser = PolynomialParser(func_body.strip())
-            parsed_expressions[func_name.strip()] = parser.expr_tree
+            function_name, function_body = expr_str.split('=', 1)
+            parser = PolynomialParser(function_body.strip())
+            parsed_expressions[function_name.strip()] = parser.expr_tree
         else:
             # Main expression
             parser = PolynomialParser(expr_str)
@@ -1951,18 +1964,18 @@ def substitute_functions(expression, function_definitions):
     if type(expression)== Function:
        
 
-        func_name = expression.name
-        func_body = function_definitions[func_name]
-        return substitute_functions(func_body, function_definitions)
+        function_name = expression.name
+        function_body = function_definitions[function_name]
+        return substitute_functions(function_body, function_definitions)
         
     
     elif type(expression)== Variable:
 
         var_name = expression.value
         if var_name in function_definitions:
-            func_body = function_definitions[var_name]
+            function_body = function_definitions[var_name]
 
-            return substitute_functions(func_body, function_definitions)
+            return substitute_functions(function_body, function_definitions)
         
         else:
 
@@ -1982,6 +1995,7 @@ def substitute_functions(expression, function_definitions):
         elif type(expression)== Multiplication:
             return Multiplication(left_substituted, right_substituted)
         
+
         elif type(expression)== Power:
             return Power(left_substituted, right_substituted)
         
